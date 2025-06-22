@@ -1,0 +1,83 @@
+﻿@model Class
+@{
+    var allSubjects = ViewData["AllSubjects"] as List<Subject> ?? new List<Subject>();
+    var classSubjects = ViewData["ClassSubjects"] as List<Subject> ?? new List<Subject>();
+    var classStudents = ViewData["ClassStudents"] as List<Student> ?? new List<Student>();
+}
+
+<h1 class="text-center">@(User.IsInRole("Admin") ? "Редагування" : "Перегляд") класу: @Model.Name</h1>
+
+<!-- Кнопка для переходу до учнів класу -->
+<div class="mb-3 text-end">
+    <a asp-controller="EditClasses" asp-action="EditStudents" asp-route-classId="@Model.Id" class="btn btn-secondary">
+        @(User.IsInRole("Admin") ? "Редагувати учнів класу" : "Переглянути учнів класу")
+    </a>
+</div>
+
+@if (User.IsInRole("Admin"))
+{
+    <form asp-action="EditName" asp-controller="EditClasses" method="post">
+        <input type="hidden" asp-for="Id" />
+
+        <!-- Зміна назви класу -->
+        <div class="mb-3">
+            <label asp-for="Name" class="form-label">Назва класу</label>
+            <input asp-for="Name" class="form-control" />
+        </div>
+        <button type="submit" class="btn btn-primary col-3 ms-2">Зберегти</button>
+    </form>
+}
+else
+{
+    <div class="mb-3">
+        <label class="form-label">Назва класу</label>
+        <input value="@Model.Name" class="form-control" disabled />
+    </div>
+}
+
+<!-- Предмети класу -->
+<div class="mb-3">
+    <label class="form-label">Предмети класу</label>
+    @if (classSubjects != null)
+    {
+        @foreach (var subject in classSubjects)
+        {
+            @if (User.IsInRole("Admin"))
+            {
+                <form asp-controller="EditClasses" asp-action="DeleteSubject" method="post" class="col-2 p-0 mb-2">
+                    <input type="hidden" name="subjectId" value="@subject.Id" />
+                    <input type="hidden" name="classId" value="@Model.Id" />
+                    <div class="btn-group w-100" role="group" aria-label="Basic example">
+                        <button type="button" class="btn btn-primary disabled">@subject.Name</button>
+                        <button type="submit" class="btn btn-danger"><i class="bi bi-x-circle"></i></button>
+                    </div>
+                </form>
+            }
+            else
+            {
+                <div class="col-2 p-0 mb-2">
+                    <button type="button" class="btn btn-primary w-100 disabled">@subject.Name</button>
+                </div>
+            }
+        }
+    }
+</div>
+
+@if (User.IsInRole("Admin"))
+{
+    <div class="mb-3 row">
+        <form asp-controller="EditClasses" asp-action="BindSubject" method="post" class="mb-3">
+            <input type="hidden" name="classId" value="@Model.Id" />
+            <div class="mb-3 row">
+                <select class="form-select col-6 mb-3" id="subjectId" name="subjectId" required>
+                    <option value="" disabled selected>Оберіть предмет</option>
+                    @foreach (var subject in allSubjects)
+                    {
+                        <option value="@subject.Id">@subject.Name</option>
+                    }
+                </select>
+                <button type="submit" class="btn btn-primary col-3 ms-2">Додати</button>
+            </div>
+        </form>
+    </div>
+}

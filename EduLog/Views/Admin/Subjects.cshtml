@@ -1,0 +1,455 @@
+@model List<EduLog.Models.Subject>
+
+@{
+    ViewData["Title"] = "Предмети";
+    var error = TempData["Error"] as string;
+    var teachers = ViewData["Teachers"] as List<EduLog.Models.Teacher>;
+    var classes = ViewData["Classes"] as List<EduLog.Models.Class>;
+}
+
+<partial name="_AdminNav" />
+
+<h2 class="mb-1">Предмети</h2>
+<p class="text-muted mb-3">Прив'яжіть предмети до вчителів та класів</p>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger alert-dismissible fade show">
+        @error
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<!-- Import bar -->
+<div class="alert alert-success d-flex align-items-center gap-2 mb-3" id="importBar">
+    <i class="bi bi-file-earmark-spreadsheet"></i>
+    <span>Маєте готову таблицю? Імпортуйте предмети з <strong>Excel або CSV</strong> одразу для всіх класів</span>
+    <button class="btn btn-sm btn-outline-success ms-auto" onclick="document.getElementById('importFile').click()">
+        <i class="bi bi-upload"></i> Завантажити файл
+    </button>
+    <input type="file" id="importFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadImport(this)">
+</div>
+
+<!-- Import preview panel -->
+<div class="card border-success mb-3" id="importPreview" style="display:none">
+    <div class="card-header bg-success-subtle d-flex align-items-center">
+        <strong><i class="bi bi-eye"></i> Попередній перегляд імпорту</strong>
+        <span class="badge bg-success ms-2" id="importCount"></span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead>
+                <tr>
+                    <th>Назва</th>
+                    <th>Вчитель</th>
+                    <th>Клас</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody id="importBody"></tbody>
+        </table>
+    </div>
+    <div class="card-footer d-flex gap-2">
+        <button class="btn btn-success btn-sm" onclick="confirmImport()"><i class="bi bi-check-lg"></i> Підтвердити імпорт</button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="cancelImport()">Скасувати</button>
+    </div>
+</div>
+
+<!-- Toolbar -->
+<div class="d-flex align-items-center gap-2 mb-3">
+    <h5 class="mb-0">Поточні прив'язки</h5>
+    <span class="badge bg-success-subtle text-success">@Model.Count предметів</span>
+    <div class="flex-grow-1"></div>
+    <button class="btn btn-outline-primary btn-sm" onclick="togglePanel('bulkPanel')">
+        <i class="bi bi-list-ul"></i> Масове додавання
+    </button>
+    <button class="btn btn-success btn-sm" onclick="togglePanel('addPanel')">
+        <i class="bi bi-plus-lg"></i> Додати предмет
+    </button>
+</div>
+
+<!-- Main table -->
+<div class="card mb-3">
+    <table class="table table-hover mb-0" id="subjectsTable">
+        <thead>
+            <tr>
+                <th style="width:200px">Назва</th>
+                <th style="width:220px">Вчитель</th>
+                <th>Класи</th>
+                <th style="width:50px"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var s in Model)
+            {
+                <tr id="subject-row-@s.Id">
+                    <td><strong>@s.Name</strong></td>
+                    <td>
+                        <div class="d-inline-flex align-items-center gap-1 position-relative">
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle teacher-badge"
+                                  style="cursor:pointer" onclick="toggleTeacherDropdown(this, @s.Id)">
+                                <span class="teacher-name">@(s.Teacher != null ? $"{s.Teacher.Surname} {s.Teacher.Name}" : "—")</span>
+                                <i class="bi bi-pencil-fill ms-1" style="font-size:10px"></i>
+                            </span>
+                            <div class="dropdown-menu p-2 teacher-dropdown" style="min-width:200px">
+                                <label class="form-label mb-1 small fw-bold">Змінити вчителя</label>
+                                <select class="form-select form-select-sm" onchange="changeTeacher(@s.Id, this)">
+                                    @foreach (var t in teachers!)
+                                    {
+                                        if (s.TeacherId == t.Id)
+                                        {
+                                            <option value="@t.Id" selected="selected">@t.Surname @t.Name</option>
+                                        }
+                                        else
+                                        {
+                                            <option value="@t.Id">@t.Surname @t.Name</option>
+                                        }
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="d-flex flex-wrap gap-1 align-items-center chips-container" data-subject="@s.Id">
+                            @if (s.ClassSubjects != null)
+                            {
+                                @foreach (var cs in s.ClassSubjects)
+                                {
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle d-flex align-items-center gap-1 class-chip">
+                                        @cs.Class.Name
+                                        <button type="button" class="btn-close btn-close-sm" style="font-size:8px"
+                                                onclick="removeClassChip(this, @s.Id, @cs.ClassId)"></button>
+                                    </span>
+                                }
+                            }
+                            <button class="btn btn-sm btn-outline-success border-dashed py-0 px-2"
+                                    style="font-size:12px; border-style:dashed"
+                                    onclick="openAddClassModal(@s.Id, '@s.Name')">+ клас</button>
+                        </div>
+                    </td>
+                    <td>
+                        <form asp-action="DeleteSubject" method="post" class="d-inline"
+                              onsubmit="return confirm('Видалити предмет @s.Name?')">
+                            <input type="hidden" name="id" value="@s.Id" />
+                            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (!Model.Any())
+    {
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-inbox" style="font-size:2rem"></i>
+            <p class="mt-2 mb-0">Ще немає предметів. Додайте перший!</p>
+        </div>
+    }
+</div>
+
+<!-- Add single subject panel -->
+<div class="card border-success mb-3" id="addPanel" style="display:none">
+    <div class="card-header bg-success-subtle">
+        <strong><i class="bi bi-plus-circle"></i> Новий предмет</strong>
+    </div>
+    <div class="card-body">
+        <form asp-action="CreateSubject" method="post">
+            <div class="row mb-3">
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold">Назва предмету *</label>
+                    <input type="text" name="name" class="form-control" placeholder="напр. Фізика" required />
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold">Вчитель *</label>
+                    <select name="teacherId" class="form-select" required>
+                        <option value="">— оберіть вчителя —</option>
+                        @foreach (var t in teachers!)
+                        {
+                            <option value="@t.Id">@t.Surname @t.Name</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Класи — оберіть один або декілька</label>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var c in classes!)
+                    {
+                        <label class="btn btn-sm btn-outline-success d-flex align-items-center gap-1" style="cursor:pointer">
+                            <input type="checkbox" name="classIds" value="@c.Id" class="form-check-input m-0" />
+                            @c.Name
+                        </label>
+                    }
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-check-lg"></i> Зберегти</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="togglePanel('addPanel')">Скасувати</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bulk add panel -->
+<div class="card border-primary mb-3" id="bulkPanel" style="display:none">
+    <div class="card-header bg-primary-subtle">
+        <strong><i class="bi bi-list-ul"></i> Масове додавання предметів</strong>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">Кожен рядок — окремий предмет. Класи можна призначити після збереження.</p>
+        <div id="bulkRows">
+            <div class="row mb-2 bulk-row align-items-end">
+                <div class="col">
+                    <input type="text" class="form-control form-control-sm bulk-name" placeholder="Назва предмету" />
+                </div>
+                <div class="col-auto" style="width:220px">
+                    <select class="form-select form-select-sm bulk-teacher">
+                        <option value="">— вчитель —</option>
+                        @foreach (var t in teachers!)
+                        {
+                            <option value="@t.Id">@t.Surname @t.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-sm btn-outline-danger" onclick="this.closest('.bulk-row').remove()"><i class="bi bi-x-lg"></i></button>
+                </div>
+            </div>
+            <div class="row mb-2 bulk-row align-items-end">
+                <div class="col">
+                    <input type="text" class="form-control form-control-sm bulk-name" placeholder="Назва предмету" />
+                </div>
+                <div class="col-auto" style="width:220px">
+                    <select class="form-select form-select-sm bulk-teacher">
+                        <option value="">— вчитель —</option>
+                        @foreach (var t in teachers!)
+                        {
+                            <option value="@t.Id">@t.Surname @t.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-sm btn-outline-danger" onclick="this.closest('.bulk-row').remove()"><i class="bi bi-x-lg"></i></button>
+                </div>
+            </div>
+        </div>
+        <button class="btn btn-sm btn-outline-success border-dashed mb-3" style="border-style:dashed" onclick="addBulkRow()">
+            <i class="bi bi-plus"></i> додати рядок
+        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-success btn-sm" onclick="saveBulk()"><i class="bi bi-check-lg"></i> Зберегти всі</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="togglePanel('bulkPanel')">Скасувати</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add class modal -->
+<div class="modal fade" id="addClassModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title">Додати клас</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2" id="modalSubjectLabel"></p>
+                <label class="form-label small fw-bold">Клас</label>
+                <select class="form-select" id="modalClassSelect">
+                    @foreach (var c in classes!)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Скасувати</button>
+                <button class="btn btn-success btn-sm" onclick="confirmAddClass()">Додати</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    var _modalSubjectId = 0;
+    var _importRows = [];
+
+    // ── Panel toggle ──
+    function togglePanel(id) {
+        var panel = document.getElementById(id);
+        var isOpen = panel.style.display !== 'none';
+        document.querySelectorAll('#addPanel,#bulkPanel').forEach(function (p) { p.style.display = 'none'; });
+        if (!isOpen) {
+            panel.style.display = 'block';
+            panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    // ── Teacher inline dropdown ──
+    function toggleTeacherDropdown(badge, subjectId) {
+        var dd = badge.parentElement.querySelector('.teacher-dropdown');
+        document.querySelectorAll('.teacher-dropdown.show').forEach(function (d) {
+            if (d !== dd) d.classList.remove('show');
+        });
+        dd.classList.toggle('show');
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.teacher-badge') && !e.target.closest('.teacher-dropdown')) {
+            document.querySelectorAll('.teacher-dropdown.show').forEach(function (d) { d.classList.remove('show'); });
+        }
+    });
+
+    function changeTeacher(subjectId, sel) {
+        var teacherId = parseInt(sel.value);
+        var teacherName = sel.options[sel.selectedIndex].text;
+        fetch('@Url.Action("ChangeSubjectTeacher", "Admin")', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subjectId: subjectId, teacherId: teacherId })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data.success) {
+                var row = document.getElementById('subject-row-' + subjectId);
+                row.querySelector('.teacher-name').textContent = data.teacherName;
+                sel.closest('.teacher-dropdown').classList.remove('show');
+            }
+        });
+    }
+
+    // ── Class chips ──
+    function openAddClassModal(subjectId, subjectName) {
+        _modalSubjectId = subjectId;
+        document.getElementById('modalSubjectLabel').textContent = '→ ' + subjectName;
+        new bootstrap.Modal(document.getElementById('addClassModal')).show();
+    }
+
+    function confirmAddClass() {
+        var classId = parseInt(document.getElementById('modalClassSelect').value);
+        fetch('@Url.Action("AddClassToSubject", "Admin")', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subjectId: _modalSubjectId, classId: classId })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data.success) {
+                var container = document.querySelector('[data-subject="' + _modalSubjectId + '"]');
+                var addBtn = container.querySelector('button:last-child');
+                var chip = document.createElement('span');
+                chip.className = 'badge bg-success-subtle text-success border border-success-subtle d-flex align-items-center gap-1 class-chip';
+                chip.innerHTML = data.className +
+                    ' <button type="button" class="btn-close btn-close-sm" style="font-size:8px" onclick="removeClassChip(this,' + _modalSubjectId + ',' + classId + ')"></button>';
+                container.insertBefore(chip, addBtn);
+                bootstrap.Modal.getInstance(document.getElementById('addClassModal')).hide();
+            }
+        });
+    }
+
+    function removeClassChip(btn, subjectId, classId) {
+        fetch('@Url.Action("RemoveClassFromSubject", "Admin")', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subjectId: subjectId, classId: classId })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data.success) {
+                btn.closest('.class-chip').remove();
+            }
+        });
+    }
+
+    // ── Bulk add ──
+    function addBulkRow() {
+        var container = document.getElementById('bulkRows');
+        var row = document.createElement('div');
+        row.className = 'row mb-2 bulk-row align-items-end';
+        row.innerHTML =
+            '<div class="col"><input type="text" class="form-control form-control-sm bulk-name" placeholder="Назва предмету" /></div>' +
+            '<div class="col-auto" style="width:220px"><select class="form-select form-select-sm bulk-teacher">' +
+            '<option value="">— вчитель —</option>' +
+            @foreach (var t in teachers!)
+            {
+                @:'<option value="@t.Id">@t.Surname @t.Name</option>' +
+            }
+            '""</select></div>' +
+            '<div class="col-auto"><button class="btn btn-sm btn-outline-danger" onclick="this.closest(\'.bulk-row\').remove()"><i class="bi bi-x-lg"></i></button></div>';
+        container.appendChild(row);
+        row.querySelector('input').focus();
+    }
+
+    function saveBulk() {
+        var items = [];
+        document.querySelectorAll('.bulk-row').forEach(function (row) {
+            var name = row.querySelector('.bulk-name').value.trim();
+            var teacherId = parseInt(row.querySelector('.bulk-teacher').value);
+            if (name && teacherId > 0) {
+                items.push({ name: name, teacherId: teacherId });
+            }
+        });
+        if (items.length === 0) { alert('Заповніть хоча б один рядок'); return; }
+
+        fetch('@Url.Action("BulkCreateSubjects", "Admin")', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(items)
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.error || 'Помилка збереження');
+            }
+        });
+    }
+
+    // ── Import ──
+    function uploadImport(input) {
+        if (!input.files.length) return;
+        var formData = new FormData();
+        formData.append('file', input.files[0]);
+
+        fetch('@Url.Action("ImportSubjects", "Admin")', {
+            method: 'POST',
+            body: formData
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data.success && data.rows && data.rows.length > 0) {
+                _importRows = data.rows;
+                showImportPreview(data.rows);
+            } else {
+                alert(data.error || 'Файл порожній або має невірний формат');
+            }
+        });
+        input.value = '';
+    }
+
+    function showImportPreview(rows) {
+        document.getElementById('importBar').style.display = 'none';
+        document.getElementById('importPreview').style.display = 'block';
+        document.getElementById('importCount').textContent = rows.length + ' рядків';
+        var body = document.getElementById('importBody');
+        body.innerHTML = '';
+        rows.forEach(function (row) {
+            var tr = document.createElement('tr');
+            var status = (row.name && row.teacherName) ? '<span class="badge bg-success">OK</span>' : '<span class="badge bg-warning">Перевірте</span>';
+            tr.innerHTML = '<td>' + (row.name || '—') + '</td><td>' + (row.teacherName || '—') + '</td><td>' + (row.className || '—') + '</td><td>' + status + '</td>';
+            body.appendChild(tr);
+        });
+    }
+
+    function confirmImport() {
+        fetch('@Url.Action("ImportSubjectsConfirm", "Admin")', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(_importRows)
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.error || 'Помилка імпорту');
+            }
+        });
+    }
+
+    function cancelImport() {
+        _importRows = [];
+        document.getElementById('importPreview').style.display = 'none';
+        document.getElementById('importBar').style.display = 'flex';
+    }
+</script>
+}

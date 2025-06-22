@@ -1,0 +1,41 @@
+@{
+    var current = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
+}
+
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+        <a class="nav-link @(current == "Index" ? "active" : "")" asp-action="Index">
+            <i class="bi bi-speedometer2"></i> Панель
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(current is "Classes" or "EditClass" or "ClassStudents" ? "active" : "")" asp-action="Classes">
+            <i class="bi bi-collection"></i> Класи
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(current == "Teachers" ? "active" : "")" asp-action="Teachers">
+            <i class="bi bi-people"></i> Вчителі
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(current == "Subjects" ? "active" : "")" asp-action="Subjects">
+            <i class="bi bi-book"></i> Предмети
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(current == "AcademicYears" ? "active" : "")" asp-action="AcademicYears">
+            <i class="bi bi-calendar-range"></i> Навч. роки
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(current == "Schedule" ? "active" : "")" asp-action="Schedule">
+            <i class="bi bi-table"></i> Розклад
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(current == "InviteTeacher" ? "active" : "")" asp-action="InviteTeacher">
+            <i class="bi bi-person-plus"></i> Запрошення
+        </a>
+    </li>
+</ul>

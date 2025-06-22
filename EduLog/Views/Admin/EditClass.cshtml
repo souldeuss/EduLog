@@ -1,0 +1,65 @@
+@model EduLog.Models.Class
+
+@{
+    ViewData["Title"] = $"Редагування — {Model.Name}";
+    var allSubjects = ViewData["AllSubjects"] as List<EduLog.Models.Subject> ?? new();
+    var boundIds = Model.ClassSubjects?.Select(cs => cs.SubjectId).ToHashSet() ?? new HashSet<int>();
+    var unboundSubjects = allSubjects.Where(s => !boundIds.Contains(s.Id)).ToList();
+}
+
+<partial name="_AdminNav" />
+
+<h2 class="mb-4">Редагувати клас: @Model.Name</h2>
+
+<form asp-action="UpdateClass" method="post" class="col-md-6 mb-4">
+    <input type="hidden" name="id" value="@Model.Id" />
+    <div class="mb-3">
+        <label class="form-label">Назва</label>
+        <input name="name" class="form-control" value="@Model.Name" required />
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Класний керівник</label>
+        <select name="teacherId" class="form-select" asp-items="@(ViewData["Teachers"] as SelectList)">
+            <option value="">— не вказано —</option>
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Зберегти</button>
+    <a asp-action="Classes" class="btn btn-secondary">Назад</a>
+</form>
+
+<hr />
+
+<h4>Прив'язані предмети</h4>
+@if (Model.ClassSubjects?.Any() == true)
+{
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        @foreach (var cs in Model.ClassSubjects)
+        {
+            <form asp-action="UnbindSubjectFromClass" method="post" class="d-inline">
+                <input type="hidden" name="classId" value="@Model.Id" />
+                <input type="hidden" name="subjectId" value="@cs.SubjectId" />
+                <button class="btn btn-sm btn-outline-danger">
+                    @cs.Subject?.Name <i class="bi bi-x"></i>
+                </button>
+            </form>
+        }
+    </div>
+}
+else
+{
+    <p class="text-muted">Немає прив'язаних предметів</p>
+}
+
+@if (unboundSubjects.Any())
+{
+    <form asp-action="BindSubjectToClass" method="post" class="d-flex gap-2 col-md-6 mt-2">
+        <input type="hidden" name="classId" value="@Model.Id" />
+        <select name="subjectId" class="form-select">
+            @foreach (var s in unboundSubjects)
+            {
+                <option value="@s.Id">@s.Name</option>
+            }
+        </select>
+        <button class="btn btn-success"><i class="bi bi-plus"></i> Додати</button>
+    </form>
+}

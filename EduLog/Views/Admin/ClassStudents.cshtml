@@ -1,0 +1,96 @@
+@model List<EduLog.Models.Student>
+
+@{
+    var cls = ViewData["Class"] as EduLog.Models.Class;
+    ViewData["Title"] = $"Учні — {cls?.Name}";
+    var error = TempData["Error"] as string;
+}
+
+<partial name="_AdminNav" />
+
+<h2 class="mb-4">Учні класу: @cls?.Name</h2>
+<a asp-action="Classes" class="btn btn-outline-secondary btn-sm mb-3">
+    <i class="bi bi-arrow-left"></i> До класів
+</a>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<table class="table table-hover">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Прізвище</th>
+            <th>Ім'я</th>
+            <th>По батькові</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @{ int idx = 1; }
+        @foreach (var s in Model)
+        {
+            <tr>
+                <td>@(idx++)</td>
+                <td>@s.Surname</td>
+                <td>@s.Name</td>
+                <td>@s.Patronymic</td>
+                <td class="text-end text-nowrap">
+                    <button class="btn btn-sm btn-outline-primary"
+                            data-bs-toggle="collapse" data-bs-target="#edit-@s.Id">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <form asp-action="DeleteStudent" method="post" class="d-inline"
+                          onsubmit="return confirm('Видалити учня?')">
+                        <input type="hidden" name="id" value="@s.Id" />
+                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                    </form>
+                </td>
+            </tr>
+            <tr class="collapse" id="edit-@s.Id">
+                <td colspan="5">
+                    <form asp-action="EditStudent" method="post" class="d-flex gap-2 align-items-end">
+                        <input type="hidden" name="id" value="@s.Id" />
+                        <div>
+                            <label class="form-label form-label-sm">Прізвище</label>
+                            <input name="surname" class="form-control form-control-sm" value="@s.Surname" />
+                        </div>
+                        <div>
+                            <label class="form-label form-label-sm">Ім'я</label>
+                            <input name="name" class="form-control form-control-sm" value="@s.Name" />
+                        </div>
+                        <div>
+                            <label class="form-label form-label-sm">По батькові</label>
+                            <input name="patronymic" class="form-control form-control-sm" value="@s.Patronymic" />
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> Зберегти</button>
+                        </div>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h5 class="mt-4">Додати учня</h5>
+<form asp-action="AddStudent" method="post" class="d-flex gap-2 flex-wrap align-items-end">
+    <input type="hidden" name="classId" value="@cls?.Id" />
+    <div>
+        <label class="form-label">Прізвище</label>
+        <input name="surname" class="form-control" required />
+    </div>
+    <div>
+        <label class="form-label">Ім'я</label>
+        <input name="name" class="form-control" required />
+    </div>
+    <div>
+        <label class="form-label">По батькові</label>
+        <input name="patronymic" class="form-control" />
+    </div>
+    <div>
+        <button type="submit" class="btn btn-success"><i class="bi bi-plus"></i> Додати</button>
+    </div>
+</form>

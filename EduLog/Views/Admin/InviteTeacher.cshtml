@@ -1,0 +1,76 @@
+@model EduLog.Models.Admin.InviteTeacherViewModel
+
+@{
+    ViewData["Title"] = "Запросити вчителя";
+    var invitations = ViewData["Invitations"] as List<EduLog.Models.Invitation> ?? new List<EduLog.Models.Invitation>();
+    var link = ViewData["InvitationLink"] as string;
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <partial name="_AdminNav" />
+
+        <h2 class="mb-4">Запросити вчителя</h2>
+
+        <form asp-action="InviteTeacher" method="post" class="mb-4">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+            <div class="input-group">
+                <input asp-for="Email" class="form-control" placeholder="Email вчителя" />
+                <button type="submit" class="btn btn-primary">Створити запрошення</button>
+            </div>
+            <span asp-validation-for="Email" class="text-danger"></span>
+        </form>
+
+        @if (!string.IsNullOrEmpty(link))
+        {
+            <div class="alert alert-success">
+                <strong>Посилання для реєстрації:</strong><br />
+                <a href="@link">@link</a>
+                <button class="btn btn-sm btn-outline-secondary ms-2"
+                        onclick="navigator.clipboard.writeText('@link')">
+                    <i class="bi bi-clipboard"></i> Копіювати
+                </button>
+            </div>
+        }
+
+        <h4 class="mt-4">Запрошення</h4>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Створено</th>
+                    <th>Дійсне до</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var inv in invitations)
+                {
+                    <tr>
+                        <td>@inv.Email</td>
+                        <td>@inv.CreatedAt.ToString("dd.MM.yyyy HH:mm")</td>
+                        <td>@inv.ExpiresAt.ToString("dd.MM.yyyy HH:mm")</td>
+                        <td>
+                            @if (inv.IsUsed)
+                            {
+                                <span class="badge bg-success">Використано</span>
+                            }
+                            else if (inv.ExpiresAt < DateTime.UtcNow)
+                            {
+                                <span class="badge bg-secondary">Прострочено</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-warning text-dark">Очікує</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

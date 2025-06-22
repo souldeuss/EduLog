@@ -1,0 +1,46 @@
+﻿@model List<Class>
+@{
+    var cardColors = new[] { "bg-warning", "bg-success", "bg-primary" };
+}
+
+
+<h1>Оберіть клас</h1>
+
+@if (User.IsInRole("Admin"))
+{
+    <!-- Форма створення нового класу -->
+    <form asp-controller="EditClasses" asp-action="CreateClass" method="post" class="mb-3 row g-2">
+        <div class="col-auto">
+            <input type="text" name="className" class="form-control" placeholder="Назва нового класу" required />
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-primary">Створити клас</button>
+        </div>
+    </form>
+
+    <!-- Форма імпорту класів з .txt -->
+    <form asp-controller="EditClasses" asp-action="ImportClasses" method="post" enctype="multipart/form-data" class="mb-4 row g-2">
+        <div class="col-auto">
+            <input type="file" name="importFile" accept=".txt" class="form-control" required />
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-success">Імпортувати з .txt</button>
+        </div>
+    </form>
+}
+
+
+<div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4 mb-3">
+    @for (int i = 0; i < Model.Count; i++)
+    {
+        var cls = Model[i];
+        var colorClass = cardColors[i % cardColors.Length];
+        <div class="col">
+            <a asp-controller="EditClasses" asp-action="Index"  asp-route-classId="@cls.Id" class="text-decoration-none">
+                <div class="card h-100 text-center align-items-center justify-content-center d-flex @colorClass text-white" style="cursor:pointer; min-height: 120px;">
+                    <span class="fw-bold fs-4">@cls.Name</span>
+                </div>
+            </a>
+        </div>
+    }
+</div>

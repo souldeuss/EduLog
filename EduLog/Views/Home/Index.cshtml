@@ -1,0 +1,29 @@
+﻿@{
+    ViewData["Title"] = "Home Page";
+}
+<style>
+    body {
+        position: relative;
+        min-height: 100vh;
+        margin: 0;
+    }
+    body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: -1;
+        background-image: url('/Data/UserImages/Flux_Dev_a_highly_detailed_and_vivid_3d_render_of_a_bustling_e_0.jpg');
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: center center;
+        opacity: 0.4; /* Зробити напівпрозорим */
+        filter: brightness(0.7); /* Зробити тусклішим */
+    }
+</style>
+<div class="text-center">
+    <h1 class="display-4">Вітаємо у EduLog</h1>
+    <p>Електронний журнал для вчителів</p>
+</div>

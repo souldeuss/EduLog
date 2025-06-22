@@ -1,0 +1,84 @@
+@model List<EduLog.Models.AcademicYear>
+
+@{
+    ViewData["Title"] = "Навчальні роки";
+    var error = TempData["Error"] as string;
+}
+
+<partial name="_AdminNav" />
+
+<h2 class="mb-4">Навчальні роки</h2>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<table class="table table-hover mb-4">
+    <thead>
+        <tr>
+            <th>Назва</th>
+            <th>Початок</th>
+            <th>Кінець</th>
+            <th>Статус</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var y in Model)
+        {
+            <tr class="@(y.IsArchived ? "table-secondary" : y.IsCurrent ? "table-success" : "")">
+                <td><strong>@y.Name</strong></td>
+                <td>@y.StartDate.ToString("dd.MM.yyyy")</td>
+                <td>@y.EndDate.ToString("dd.MM.yyyy")</td>
+                <td>
+                    @if (y.IsCurrent)
+                    {
+                        <span class="badge bg-success">Поточний</span>
+                    }
+                    @if (y.IsArchived)
+                    {
+                        <span class="badge bg-secondary">Архів</span>
+                    }
+                </td>
+                <td class="text-end">
+                    @if (!y.IsCurrent && !y.IsArchived)
+                    {
+                        <form asp-action="SetCurrent" method="post" class="d-inline">
+                            <input type="hidden" name="id" value="@y.Id" />
+                            <button class="btn btn-sm btn-outline-success" title="Зробити поточним">
+                                <i class="bi bi-check-circle"></i>
+                            </button>
+                        </form>
+                    }
+                    <form asp-action="ToggleArchive" method="post" class="d-inline">
+                        <input type="hidden" name="id" value="@y.Id" />
+                        <button class="btn btn-sm btn-outline-secondary"
+                                title="@(y.IsArchived ? "Розархівувати" : "Архівувати")">
+                            <i class="bi @(y.IsArchived ? "bi-box-arrow-up" : "bi-archive")"></i>
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h5>Створити навчальний рік</h5>
+<form asp-action="CreateAcademicYear" method="post" class="d-flex gap-2 flex-wrap align-items-end">
+    <div>
+        <label class="form-label">Назва</label>
+        <input name="name" class="form-control" placeholder="2024–2025" required />
+    </div>
+    <div>
+        <label class="form-label">Початок</label>
+        <input type="date" name="startDate" class="form-control" required />
+    </div>
+    <div>
+        <label class="form-label">Кінець</label>
+        <input type="date" name="endDate" class="form-control" required />
+    </div>
+    <div>
+        <button type="submit" class="btn btn-success"><i class="bi bi-plus"></i> Створити</button>
+    </div>
+</form>

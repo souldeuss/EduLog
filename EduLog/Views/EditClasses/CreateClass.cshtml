@@ -1,0 +1,16 @@
+﻿@{
+    ViewData["Title"] = "Створення нового класу";
+}
+
+<h1 class="text-center">Створення нового класу</h1>
+
+
+<form asp-action="CreateClass" asp-controller="EditClasses" method="post">
+    <!-- Зміна назви класу -->
+    <div class="mb-3">
+        <label for="className" class="form-label">Назва класу</label>
+        <input type="text" id="className" name="className" class="form-control" required />
+    </div>
+    <button type="submit" class="btn btn-primary col-3 ms-2">Створити</button>
+    <a asp-action="SelectClasses" class="btn btn-outline-secondary ms-2">Скасувати</a>
+</form>

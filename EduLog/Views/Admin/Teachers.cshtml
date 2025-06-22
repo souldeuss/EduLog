@@ -1,0 +1,38 @@
+@model List<EduLog.Models.Teacher>
+
+@{
+    ViewData["Title"] = "Вчителі";
+    var users = ViewData["Users"] as List<EduLog.Models.ApplicationUser> ?? new();
+}
+
+<partial name="_AdminNav" />
+
+<h2 class="mb-4">Вчителі</h2>
+
+<p class="text-muted">
+    Щоб додати вчителя, створіть запрошення на вкладці
+    <a asp-action="InviteTeacher">Запрошення</a>.
+</p>
+
+<table class="table table-hover">
+    <thead>
+        <tr>
+            <th>Прізвище</th>
+            <th>Ім'я</th>
+            <th>По батькові</th>
+            <th>Email</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var t in Model)
+        {
+            var user = users.FirstOrDefault(u => u.TeacherId == t.Id);
+            <tr>
+                <td><strong>@t.Surname</strong></td>
+                <td>@t.Name</td>
+                <td>@t.Patronymic</td>
+                <td>@(user?.Email ?? "—")</td>
+            </tr>
+        }
+    </tbody>
+</table>

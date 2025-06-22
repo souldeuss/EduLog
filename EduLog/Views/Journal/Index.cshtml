@@ -1,0 +1,195 @@
+﻿@model EduLog.Models.JournalView
+@{
+    var today = DateTime.Today;
+    var allClasses = ViewBag.AllClasses as List<Class> ?? new List<Class>();
+    var subjectsForClass = ViewBag.SubjectsForClass as List<Subject> ?? new List<Subject>();
+    int selMonth = (int)ViewBag.SelectedMonth;
+    int selYear = (int)ViewBag.SelectedYear;
+    string viewMode = ViewBag.ViewMode;
+    string[] monthNames = { "Січень","Лютий","Березень","Квітень","Травень","Червень",
+                            "Липень","Серпень","Вересень","Жовтень","Листопад","Грудень" };
+}
+
+<link rel="stylesheet" href="~/css/Journal.css" asp-append-version="true" />
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <h4 class="mb-0 me-3">Журнал:</h4>
+    <select id="classSwitcher" class="form-select form-select-sm" style="width:auto;">
+        @foreach (var c in allClasses)
+        {
+            <option value="@c.Id" selected="@(c.Id == Model.Class?.Id)">@c.Name</option>
+        }
+    </select>
+    <select id="subjectSwitcher" class="form-select form-select-sm" style="width:auto;">
+        @foreach (var s in subjectsForClass)
+        {
+            <option value="@s.Id" selected="@(s.Id == Model.Subject?.Id)">@s.Name</option>
+        }
+    </select>
+</div>
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <div class="btn-group" role="group">
+        @foreach (var m in new[] { ("day", "День", "bi-calendar-date"), ("week", "Тиждень", "bi-5-square"), ("month", "Місяць", "bi-calendar3") })
+        {
+            if (viewMode == m.Item1)
+            {
+                <button type="button" class="btn btn-primary btn-sm active" disabled>
+                    @m.Item2 <i class="bi @m.Item3"></i>
+                </button>
+            }
+            else
+            {
+                <a class="btn btn-outline-primary btn-sm"
+                   asp-action="Index"
+                   asp-route-classId="@Model.Class.Id"
+                   asp-route-subjectId="@Model.Subject.Id"
+                   asp-route-viewMode="@m.Item1"
+                   asp-route-month="@selMonth"
+                   asp-route-year="@selYear">
+                    @m.Item2 <i class="bi @m.Item3"></i>
+                </a>
+            }
+        }
+    </div>
+
+    @if (viewMode == "month")
+    {
+        var prevMonth = selMonth == 1 ? 12 : selMonth - 1;
+        var prevYear = selMonth == 1 ? selYear - 1 : selYear;
+        var nextMonth = selMonth == 12 ? 1 : selMonth + 1;
+        var nextYear = selMonth == 12 ? selYear + 1 : selYear;
+
+        <div class="d-flex align-items-center gap-2">
+            <a class="btn btn-outline-secondary btn-sm"
+               asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
+               asp-route-viewMode="month" asp-route-month="@prevMonth" asp-route-year="@prevYear">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+            <strong>@monthNames[selMonth - 1] @selYear</strong>
+            <a class="btn btn-outline-secondary btn-sm"
+               asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
+               asp-route-viewMode="month" asp-route-month="@nextMonth" asp-route-year="@nextYear">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </div>
+    }
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered align-middle text-center">
+        <thead>
+            <tr>
+                <th class="sticky-col">Учень</th>
+                @foreach (var day in Model.Days)
+                {
+                    <th class="@(day.Date == today ? "table-primary" : "")">
+                        @day.ToString("ddd")<br />@day.ToString("dd.MM")
+                    </th>
+                }
+                <th class="table-warning">Сер.</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var student in Model.Students)
+            {
+                <tr>
+                    <td class="text-start sticky-col">@student.Surname @student.Name</td>
+                    @foreach (var day in Model.Days)
+                    {
+                        var cellVal = Model.GetCellValue(student.Id, day, Model.Subject.Id);
+                        var isAbsence = cellVal == "Н";
+                        <td class="p-0 @(isAbsence ? "table-danger" : "")">
+                            <input type="text"
+                                   class="form-control form-control-sm text-center journal-cell"
+                                   value="@cellVal"
+                                   data-student="@student.Id"
+                                   data-date="@day.ToString("yyyy-MM-dd")"
+                                   data-type="grade"
+                                   onchange="saveCell(this)"
+                                   style="width: 50px; display: inline-block;" />
+                        </td>
+                    }
+                    @{
+                        var studentGrades = Model.Grades?.Where(g => g.StudentId == student.Id && g.Value > 0).ToList();
+                        var avg = studentGrades != null && studentGrades.Any() ? studentGrades.Average(g => g.Value) : 0;
+                    }
+                    <td class="table-warning fw-bold">@(avg > 0 ? avg.ToString("0.0") : "—")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@section Scripts
+{
+    <script>
+    function saveCell(input) {
+        var val = input.value.trim();
+
+        // Client-side validation: empty, 1-12, or Н/н
+        if (val !== '' && val.toUpperCase() !== 'Н') {
+            var num = parseInt(val);
+            if (isNaN(num) || num < 1 || num > 12) {
+                alert('Допустимі значення: 1-12 або Н');
+                input.value = input.defaultValue;
+                return;
+            }
+        }
+
+        let data = {
+            studentId: input.dataset.student,
+            subjectId: '@Model.Subject.Id',
+            date: input.dataset.date,
+            type: input.dataset.type,
+            value: val
+        };
+        fetch('@Url.Action("SaveCell", "Journal")', {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        }).then(function(r) {
+            if (!r.ok) {
+                input.value = input.defaultValue;
+                alert('Допустимі значення: 1-12 або Н');
+                return;
+            }
+            // Update cell appearance
+            var td = input.parentElement;
+            if (val.toUpperCase() === 'Н') {
+                input.value = 'Н';
+                td.classList.add('table-danger');
+            } else {
+                td.classList.remove('table-danger');
+            }
+        });
+    }
+
+    function navigateJournal() {
+        var classId = document.getElementById('classSwitcher').value;
+        var subjectId = document.getElementById('subjectSwitcher').value;
+        window.location.href = '@Url.Action("Index", "Journal")' +
+            '?classId=' + classId + '&subjectId=' + subjectId +
+            '&viewMode=@viewMode&month=@selMonth&year=@selYear';
+    }
+
+    document.getElementById('subjectSwitcher').addEventListener('change', navigateJournal);
+
+    document.getElementById('classSwitcher').addEventListener('change', function () {
+        var classId = this.value;
+        fetch('@Url.Action("GetSubjectsForClass", "Journal")' + '?classId=' + classId)
+            .then(r => r.json())
+            .then(function (subjects) {
+                var sel = document.getElementById('subjectSwitcher');
+                sel.innerHTML = '';
+                subjects.forEach(function (s) {
+                    var opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.name;
+                    sel.appendChild(opt);
+                });
+                if (subjects.length > 0) navigateJournal();
+            });
+    });
+    </script>
+}

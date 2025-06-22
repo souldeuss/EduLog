@@ -1,0 +1,107 @@
+﻿@model List<Class>
+@{
+    var cardColors = new[] { "bg-warning", "bg-success", "bg-primary" };
+}
+
+<h1>Оберіть клас</h1>
+
+<div class="d-flex gap-2 mb-3 align-items-center flex-wrap">
+    <div class="input-group" style="max-width:300px;">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" id="classSearch" class="form-control" placeholder="Пошук класу…" oninput="filterClasses()" />
+    </div>
+    <div class="btn-group" role="group">
+        <button type="button" class="btn btn-primary btn-sm" onclick="setMode('grid')" id="modeGrid" title="Сітка">
+            <i class="bi bi-grid-3x3-gap"></i>
+        </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" onclick="setMode('rows')" id="modeRows" title="Рядками">
+            <i class="bi bi-list-ul"></i>
+        </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" onclick="setMode('list')" id="modeList" title="Список">
+            <i class="bi bi-card-list"></i>
+        </button>
+    </div>
+</div>
+
+@* ── Grid view ── *@
+<div id="viewGrid" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4 mb-3">
+    @for (int i = 0; i < Model.Count; i++)
+    {
+        var cls = Model[i];
+        var colorClass = cardColors[i % cardColors.Length];
+        <div class="col class-item" data-name="@cls.Name.ToLower()">
+            <a asp-controller="Journal" asp-action="SelectSubject" asp-route-classId="@cls.Id" class="text-decoration-none">
+                <div class="card h-100 text-center align-items-center justify-content-center d-flex @colorClass text-white" style="cursor:pointer; min-height: 120px;">
+                    <span class="fw-bold fs-4">@cls.Name</span>
+                </div>
+            </a>
+        </div>
+    }
+</div>
+
+@* ── Rows view (table) ── *@
+<div id="viewRows" class="mb-3" style="display:none;">
+    <table class="table table-hover">
+        <thead><tr><th>#</th><th>Клас</th><th></th></tr></thead>
+        <tbody>
+            @for (int i = 0; i < Model.Count; i++)
+            {
+                var cls = Model[i];
+                <tr class="class-item" data-name="@cls.Name.ToLower()">
+                    <td>@(i + 1)</td>
+                    <td><strong>@cls.Name</strong></td>
+                    <td>
+                        <a asp-controller="Journal" asp-action="SelectSubject" asp-route-classId="@cls.Id" class="btn btn-sm btn-primary">
+                            Обрати <i class="bi bi-arrow-right"></i>
+                        </a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@* ── List view (compact) ── *@
+<div id="viewList" class="mb-3" style="display:none;">
+    <div class="list-group">
+        @foreach (var cls in Model)
+        {
+            <a asp-controller="Journal" asp-action="SelectSubject" asp-route-classId="@cls.Id"
+               class="list-group-item list-group-item-action class-item" data-name="@cls.Name.ToLower()">
+                <i class="bi bi-mortarboard"></i> @cls.Name
+            </a>
+        }
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function filterClasses() {
+        var q = document.getElementById('classSearch').value.toLowerCase();
+        document.querySelectorAll('.class-item').forEach(function (el) {
+            el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+        });
+    }
+
+    function setMode(mode) {
+        document.getElementById('viewGrid').style.display = mode === 'grid' ? '' : 'none';
+        document.getElementById('viewRows').style.display = mode === 'rows' ? '' : 'none';
+        document.getElementById('viewList').style.display = mode === 'list' ? '' : 'none';
+
+        ['modeGrid', 'modeRows', 'modeList'].forEach(function (id) {
+            var btn = document.getElementById(id);
+            btn.className = btn.className.replace('btn-primary', 'btn-outline-primary');
+        });
+        var activeId = mode === 'grid' ? 'modeGrid' : mode === 'rows' ? 'modeRows' : 'modeList';
+        var active = document.getElementById(activeId);
+        active.className = active.className.replace('btn-outline-primary', 'btn-primary');
+
+        localStorage.setItem('classViewMode', mode);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var saved = localStorage.getItem('classViewMode');
+        if (saved) setMode(saved);
+    });
+</script>
+}

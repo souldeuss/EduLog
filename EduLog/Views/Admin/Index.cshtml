@@ -1,0 +1,68 @@
+@{
+    ViewData["Title"] = "Адмін-панель";
+    int classCount = (int)(ViewData["ClassCount"] ?? 0);
+    int teacherCount = (int)(ViewData["TeacherCount"] ?? 0);
+    int studentCount = (int)(ViewData["StudentCount"] ?? 0);
+    int subjectCount = (int)(ViewData["SubjectCount"] ?? 0);
+}
+
+<partial name="_AdminNav" />
+
+<h2 class="mb-4">Панель керування</h2>
+
+<div class="row g-4">
+    <div class="col-md-3">
+        <div class="card text-bg-primary">
+            <div class="card-body text-center">
+                <i class="bi bi-collection fs-1"></i>
+                <h3 class="mt-2">@classCount</h3>
+                <p class="mb-0">Класів</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-success">
+            <div class="card-body text-center">
+                <i class="bi bi-people fs-1"></i>
+                <h3 class="mt-2">@teacherCount</h3>
+                <p class="mb-0">Вчителів</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-info">
+            <div class="card-body text-center">
+                <i class="bi bi-mortarboard fs-1"></i>
+                <h3 class="mt-2">@studentCount</h3>
+                <p class="mb-0">Учнів</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-warning">
+            <div class="card-body text-center">
+                <i class="bi bi-book fs-1"></i>
+                <h3 class="mt-2">@subjectCount</h3>
+                <p class="mb-0">Предметів</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5 g-3">
+    <div class="col-md-4">
+        <a asp-action="Classes" class="btn btn-outline-primary w-100 py-3">
+            <i class="bi bi-collection"></i> Управління класами
+        </a>
+    </div>
+    <div class="col-md-4">
+        <a asp-action="Teachers" class="btn btn-outline-success w-100 py-3">
+            <i class="bi bi-people"></i> Вчителі
+        </a>
+    </div>
+    <div class="col-md-4">
+        <a asp-action="Schedule" class="btn btn-outline-secondary w-100 py-3">
+            <i class="bi bi-table"></i> Розклад
+        </a>
+    </div>
+</div>

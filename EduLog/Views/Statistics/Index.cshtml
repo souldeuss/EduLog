@@ -1,0 +1,139 @@
+@{
+    ViewData["Title"] = "Статистика";
+
+    var classes = ViewBag.Classes as List<Class> ?? new List<Class>();
+    var selectedClass = ViewBag.SelectedClass as Class;
+    var gradesBySubject = ViewBag.GradesBySubject as Dictionary<string, double> ?? new();
+    var attendanceBySubject = ViewBag.AttendanceBySubject as Dictionary<string, double> ?? new();
+    var studentAverages = ViewBag.StudentAverages as Dictionary<string, double> ?? new();
+}
+
+<h2 class="mb-4"><i class="bi bi-bar-chart-line"></i> Статистика</h2>
+
+<form method="get" asp-action="Index" class="mb-4">
+    <div class="d-flex gap-2 align-items-end flex-wrap">
+        <div>
+            <label class="form-label">Клас</label>
+            <select name="classId" class="form-select" onchange="this.form.submit()">
+                @foreach (var c in classes)
+                {
+                    <option value="@c.Id" selected="@(selectedClass?.Id == c.Id)">@c.Name</option>
+                }
+            </select>
+        </div>
+        @if (selectedClass != null)
+        {
+            <a asp-action="ExportExcel" asp-route-classId="@selectedClass.Id" class="btn btn-success">
+                <i class="bi bi-file-earmark-excel"></i> Завантажити Excel
+            </a>
+        }
+    </div>
+</form>
+
+@if (selectedClass == null)
+{
+    <div class="alert alert-info">Оберіть клас для перегляду статистики</div>
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Середній бал по предметах</h5>
+                    <canvas id="gradeChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Відвідуваність по предметах (%)</h5>
+                    <canvas id="attendanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Середній бал по учнях</h5>
+                    <div style="max-height:400px; overflow-y:auto;">
+                        <canvas id="studentChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    @if (selectedClass != null)
+    {
+        <script>
+            var gradeLabels = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(gradesBySubject.Keys));
+            var gradeValues = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(gradesBySubject.Values));
+            var attLabels = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(attendanceBySubject.Keys));
+            var attValues = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(attendanceBySubject.Values));
+            var stuLabels = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(studentAverages.Keys));
+            var stuValues = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(studentAverages.Values));
+
+            var colors = ['#0d6efd', '#198754', '#ffc107', '#dc3545', '#0dcaf0', '#6f42c1', '#fd7e14', '#20c997'];
+
+            new Chart(document.getElementById('gradeChart'), {
+                type: 'bar',
+                data: {
+                    labels: gradeLabels,
+                    datasets: [{
+                        label: 'Середній бал',
+                        data: gradeValues,
+                        backgroundColor: colors.slice(0, gradeLabels.length),
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: { y: { beginAtZero: true, max: 12 } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            new Chart(document.getElementById('attendanceChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: attLabels,
+                    datasets: [{
+                        data: attValues,
+                        backgroundColor: colors.slice(0, attLabels.length)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+
+            new Chart(document.getElementById('studentChart'), {
+                type: 'bar',
+                data: {
+                    labels: stuLabels,
+                    datasets: [{
+                        label: 'Середній бал',
+                        data: stuValues,
+                        backgroundColor: '#0d6efd',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { x: { beginAtZero: true, max: 12 } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        </script>
+    }
+}

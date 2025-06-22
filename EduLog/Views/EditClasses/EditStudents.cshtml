@@ -1,0 +1,84 @@
+﻿@model List<Student>
+@{
+    var cls = ViewData["Class"] as Class;
+}
+
+<a asp-action="SelectClasses" asp-controller="EditClasses" class="btn btn-secondary mb-3">
+    <i class="bi bi-arrow-left"></i> Назад
+</a>
+
+<h2>@(User.IsInRole("Admin") ? "Редагування" : "Перегляд") учнів класу: @cls?.Name</h2>
+
+@if (User.IsInRole("Admin"))
+{
+    <!-- Форма для додавання нового учня -->
+    <div class="card mb-4 border-primary">
+        <div class="card-body">
+            <form asp-action="AddStudent" asp-controller="EditClasses" method="post" class="row g-2 align-items-end">
+                <input type="hidden" name="classId" value="@cls?.Id" />
+                <div class="col-md-3">
+                    <input type="text" name="surname" class="form-control" placeholder="Прізвище" required />
+                </div>
+                <div class="col-md-3">
+                    <input type="text" name="name" class="form-control" placeholder="Ім'я" required />
+                </div>
+                <div class="col-md-3">
+                    <input type="text" name="patronymic" class="form-control" placeholder="По батькові" required />
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Додати учня</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+@foreach (var student in Model)
+{
+    <div class="card mb-3">
+        <div class="card-body d-flex align-items-center">
+            @if (User.IsInRole("Admin"))
+            {
+                <form asp-action="EditStudent" asp-controller="EditClasses" method="post" class="flex-grow-1 d-flex align-items-center">
+                    <input type="hidden" name="id" value="@student.Id" />
+                    <input type="hidden" name="classId" value="@student.ClassId" />
+                    <div class="row w-100">
+                        <div class="col-md-3 mb-2">
+                            <input type="text" name="surname" value="@student.Surname" class="form-control" placeholder="Прізвище" required />
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <input type="text" name="name" value="@student.Name" class="form-control" placeholder="Ім'я" required />
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <input type="text" name="patronymic" value="@student.Patronymic" class="form-control" placeholder="По батькові" required />
+                        </div>
+                        <div class="col-md-2 mb-2">
+                            <button type="submit" class="btn btn-success w-100">Зберегти</button>
+                        </div>
+                    </div>
+                </form>
+                <form asp-action="DeleteStudent" asp-controller="EditClasses" method="post" class="ms-2">
+                    <input type="hidden" name="id" value="@student.Id" />
+                    <input type="hidden" name="classId" value="@student.ClassId" />
+                    <button type="submit" class="btn btn-danger" onclick="return confirm('Видалити учня?');">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                </form>
+            }
+            else
+            {
+                <div class="row w-100">
+                    <div class="col-md-3 mb-2">
+                        <input value="@student.Surname" class="form-control" disabled />
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <input value="@student.Name" class="form-control" disabled />
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <input value="@student.Patronymic" class="form-control" disabled />
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}

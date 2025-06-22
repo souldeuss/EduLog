@@ -1,0 +1,160 @@
+﻿@model EduLog.Models.Teacher
+
+@{
+    var classes = ViewData["Classes"] as List<Class>;
+    var AvaibleClasses = ViewData["AvaibleClasses"] as List<Class>;
+    var subjects = ViewData["Subjects"] as List<Subject>;
+}
+
+
+<h1>Профіль вчителя</h1>
+
+
+<div class="container">
+    <div class="row">
+        <div class="col-xl-3 col-md-4 text-center">
+            <form asp-action="ChangePhoto" asp-controller="Profile" enctype="multipart/form-data" method="post">
+                <label for="profilePhotoInput" style="cursor:pointer;">
+                    <img src="@(Url.Content(Model.PhotoPath ?? "/Data/UserImages/User-avatar.svg.png"))"
+                         class="rounded-circle img-thumbnail mb-2"
+                         style="width: 180px; height: 180px; object-fit: cover;"
+                         alt="Фото профілю"
+                         id="profilePhotoPreview" />
+                </label>
+                <input type="file" id="profilePhotoInput" name="ProfilePhoto" class="d-none" accept="image/*" onchange="previewPhoto(event)" />
+                <button type="submit" class="btn btn-primary btn-sm mt-2">Зберегти фото</button>
+            </form>
+        </div>
+        <div class="col-xl-9 col-md-8">
+            <form asp-action="Edit" asp-controller="Profile" method="post">
+                <input type="hidden" asp-for="Id" />
+                <div class="mb-3 row">
+                    <label class="col-sm-2 col-form-label">Ім'я</label>
+                    <div class="col-sm-10">
+                        <input asp-for="Name" class="form-control" />
+                    </div>
+                </div>
+                <div class="mb-3 row">
+                    <label class="col-sm-2 col-form-label">Прізвище</label>
+                    <div class="col-sm-10">
+                        <input asp-for="Surname" class="form-control" />
+                    </div>
+                </div>
+                <div class="mb-3 row">
+                    <label class="col-sm-2 col-form-label">По батькові</label>
+                    <div class="col-sm-10">
+                        <input asp-for="Patronymic" class="form-control" />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 d-flex justify-content-center">
+                        <button type="submit" class="btn btn-primary">Зберегти</button>
+                    </div>
+                </div>
+                </form>
+                <div class="mb-3 row">
+
+                    <label class="col-sm-2 col-form-label mb-3">Класи</label>
+                    <div class="col-sm-10 mb-3">
+                        <div class="row">
+                            @if (classes != null)
+                            {
+                                foreach (var obj in classes)
+                                {
+                                    if (obj != null)
+                                    {
+                                        @if (User.IsInRole("Admin"))
+                                        {
+                                            <form asp-controller="Profile" asp-action="DeleteClass" method="post" class="col-2 p-0 mb-2">
+                                                <input type="hidden" name="classId" value="@obj.Id" />
+                                                <div class="btn-group w-100 mb-3" role="group" aria-label="Basic example">
+                                                    <button type="button" class="btn btn-primary disabled">@obj.Name</button>
+                                                    <button type="submit" class="btn btn-danger "><i class="bi bi-x-circle"></i></button>
+                                                </div>
+                                            </form>
+                                        }
+                                        else
+                                        {
+                                            <div class="col-2 p-0 mb-2">
+                                                <button type="button" class="btn btn-primary w-100 mb-3 disabled">@obj.Name</button>
+                                            </div>
+                                        }
+                                    }
+                                }
+                            }
+                        </div>
+
+                        @if (User.IsInRole("Admin"))
+                        {
+                            <form asp-controller="Profile" asp-action="AddClass" method="post" class="mb-3">
+                                <div class="mb-3 row">
+                                    <select class="form-select col-2 mb-3" id="selectedClassId" name="selectedClassId">
+                                        @if (AvaibleClasses != null && AvaibleClasses.Count != 0)
+                                        {
+                                            @foreach (var obj in AvaibleClasses)
+                                            {
+                                                <option value="@obj.Id">@obj.Name</option>
+                                            }
+                                        }
+                                        @if (AvaibleClasses == null || AvaibleClasses.Count == 0)
+                                        {
+                                            <option>Поки немає доступних класів</option>
+                                        }
+                                    </select>
+                                    <button type="submit" class="btn btn-primary col-3">Додати</button>
+                                </div>
+                            </form>
+                        }
+                    </div>
+                    <div class="row mb-3">
+                        <label class="col-sm-2 col-form-label mb-3">Дисципліни</label>
+                        @if (subjects != null)
+                        {
+                            foreach (var subject in subjects)
+                            {
+                                <form asp-controller="Profile" asp-action="DeleteSubject" method="post" class="col-2 p-0 mb-2">
+                                    <input type="hidden" name="subjectName" value="@subject.Name" />
+                                    <div class="btn-group w-100" role="group" aria-label="Basic example">
+                                        <button type="button" class="btn btn-primary disabled">@subject.Name</button>
+                                        <button type="submit" class="btn btn-danger"><i class="bi bi-x-circle"></i></button>
+                                    </div>
+                                </form>
+                            }
+                        }
+
+                        <form asp-controller="Profile" asp-action="AddSubject" method="post" class="mb-3">
+                            <div class="mb-3 row">
+                                <input type="text" class="form-control col-6 mb-3" id="subjectName" name="subjectName" placeholder="Назва предмету" required />
+                                <button type="submit" class="btn btn-primary col-3 ms-2">Додати</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <hr />
+                    <h5 class="mt-4"><i class="bi bi-key"></i> Зміна паролю</h5>
+                    @if (TempData["PasswordError"] != null)
+                    {
+                        <div class="alert alert-danger">@TempData["PasswordError"]</div>
+                    }
+                    @if (TempData["PasswordSuccess"] != null)
+                    {
+                        <div class="alert alert-success">@TempData["PasswordSuccess"]</div>
+                    }
+                    <form asp-controller="Profile" asp-action="ChangePassword" method="post" class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label">Поточний пароль</label>
+                            <input type="password" name="currentPassword" class="form-control" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Новий пароль</label>
+                            <input type="password" name="newPassword" class="form-control" minlength="6" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Підтвердити новий пароль</label>
+                            <input type="password" name="confirmPassword" class="form-control" minlength="6" required />
+                        </div>
+                        <button type="submit" class="btn btn-warning"><i class="bi bi-check-lg"></i> Змінити пароль</button>
+                    </form>
+        </div>
+    </div>
+</div>

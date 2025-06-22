@@ -1,0 +1,80 @@
+@model EduLog.Models.Account.RegisterSchoolViewModel
+
+@{
+    ViewData["Title"] = "Реєстрація школи";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <h2 class="text-center mb-4">Реєстрація школи</h2>
+        <form asp-action="RegisterSchool" asp-controller="Account" method="post">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+            <h5>Інформація про школу</h5>
+            <div class="mb-3">
+                <label asp-for="SchoolName" class="form-label"></label>
+                <input asp-for="SchoolName" class="form-control" />
+                <span asp-validation-for="SchoolName" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="SchoolAddress" class="form-label"></label>
+                <input asp-for="SchoolAddress" class="form-control" />
+                <span asp-validation-for="SchoolAddress" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="SchoolType" class="form-label"></label>
+                <select asp-for="SchoolType" class="form-select">
+                    <option value="">-- Оберіть тип --</option>
+                    <option value="ЗОШ">ЗОШ</option>
+                    <option value="Ліцей">Ліцей</option>
+                    <option value="Гімназія">Гімназія</option>
+                    <option value="Коледж">Коледж</option>
+                    <option value="Інше">Інше</option>
+                </select>
+            </div>
+
+            <hr />
+            <h5>Адміністратор школи</h5>
+            <div class="mb-3">
+                <label asp-for="Surname" class="form-label"></label>
+                <input asp-for="Surname" class="form-control" />
+                <span asp-validation-for="Surname" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Name" class="form-label"></label>
+                <input asp-for="Name" class="form-control" />
+                <span asp-validation-for="Name" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Patronymic" class="form-label"></label>
+                <input asp-for="Patronymic" class="form-control" />
+                <span asp-validation-for="Patronymic" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Email" class="form-label"></label>
+                <input asp-for="Email" class="form-control" placeholder="example@@mail.com" />
+                <span asp-validation-for="Email" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Password" class="form-label"></label>
+                <input asp-for="Password" class="form-control" />
+                <span asp-validation-for="Password" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="ConfirmPassword" class="form-label"></label>
+                <input asp-for="ConfirmPassword" class="form-control" />
+                <span asp-validation-for="ConfirmPassword" class="text-danger"></span>
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100">Зареєструвати школу</button>
+        </form>
+
+        <div class="text-center mt-3">
+            <p>Вже є акаунт? <a asp-action="Login" asp-controller="Account">Увійти</a></p>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
