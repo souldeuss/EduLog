@@ -1,0 +1,39 @@
+﻿/* Responsive table container */
+.table-responsive {
+    overflow-x: auto;
+}
+
+.sticky-col {
+    min-width: 180px;
+    max-width: 220px;
+    width: 200px;
+    position: sticky;
+    left: 0;
+    background: #fff;
+    z-index: 2;
+}
+
+@media (max-width: 768px) {
+    .table th, .table td {
+        min-width: 90px;
+        font-size: 0.9em;
+        padding: 0.3rem;
+    }
+}
+
+/* Ensure table has a minimum width for scrolling */
+/*.table {
+    min-width: 600px;
+}*/
+
+    /* Make input fill the cell and remove border */
+    .table td input.form-control {
+        border: none;
+        box-shadow: none;
+        width: 100%;
+        height: 100%;
+        padding: 0;
+        margin: 0;
+        text-align: center;
+        background: transparent;
+    }

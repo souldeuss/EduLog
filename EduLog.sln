@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36202.13 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EduLog", "EduLog\EduLog.csproj", "{F199BA3D-E75C-4C93-BB9F-D87E02AD5E25}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F199BA3D-E75C-4C93-BB9F-D87E02AD5E25}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F199BA3D-E75C-4C93-BB9F-D87E02AD5E25}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F199BA3D-E75C-4C93-BB9F-D87E02AD5E25}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F199BA3D-E75C-4C93-BB9F-D87E02AD5E25}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {A894139C-0911-474F-B2B7-67DB8E39D836}
+	EndGlobalSection
+EndGlobal

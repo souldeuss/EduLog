@@ -1,0 +1,284 @@
+﻿@model EduLog.Models.JournalView
+@{
+    var today = DateTime.Today;
+}
+<
+<h1>Журнал: @Model.Class.Name (@Model.Subject.Name)</h1>
+
+<link rel="stylesheet" href="~/css/Journal.css" asp-append-version="true" />
+
+<div class="btn-group mb-3" role="group" aria-label="Вигляд журналу">
+    @if (ViewBag.ViewMode == "day")
+    {
+        <button type="button" class="btn btn-primary active" disabled>
+            День <i class="bi bi-calendar-date"></i>
+        </button>
+    }
+    else
+    {
+        <a class="btn btn-outline-primary"
+           asp-action="Index"
+           asp-route-classId="@Model.Class.Id"
+           asp-route-subjectId="@Model.Subject.Id"
+           asp-route-viewMode="day">
+            День <i class="bi bi-calendar-date"></i>
+        </a>
+    }
+
+    @if (ViewBag.ViewMode == "week")
+    {
+        <button type="button" class="btn btn-primary active" disabled>
+            Тиждень <i class="bi bi-5-square"></i>
+        </button>
+    }
+    else
+    {
+        <a class="btn btn-outline-primary "
+           asp-action="Index"
+           asp-route-classId="@Model.Class.Id"
+           asp-route-subjectId="@Model.Subject.Id"
+           asp-route-viewMode="week">
+            Тиждень <i class="bi bi-5-square"></i>
+        </a>
+    }
+
+    @if (ViewBag.ViewMode == "month")
+    {
+        <button type="button" class="btn btn-primary active" disabled>
+            Місяць <i class="bi bi-calendar3"></i>
+        </button>
+    }
+    else
+    {
+        <a class="btn btn-outline-primary disabled"
+           asp-action="Index"
+           asp-route-classId="@Model.Class.Id"
+           asp-route-subjectId="@Model.Subject.Id"
+           asp-route-viewMode="month">
+            Місяць <i class="bi bi-calendar3"></i>
+        </a>
+    }
+</div>
+<div class="table-responsive">
+    <table class="table table-bordered align-middle text-center">
+        <thead>
+            <tr>
+                <th class="sticky-col">Учень</th>
+                @foreach (var day in Model.Days)
+                {
+                    <th class="@(day.Date == today ? "table-primary" : "")">
+                        @day.ToString("ddd")<br />@day.ToString("dd.MM")
+                    </th>
+                }
+
+                @*@foreach (var custom in Model.CustomColumns)
+                    {
+                        <th>@custom.Name</th>
+                    }*@
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var student in Model.Students)
+            {
+                <tr>
+                    <td class="text-start sticky-col">@student.Surname @student.Name</td>
+                    @foreach (var day in Model.Days)
+                    {
+                        var grade = Model.GetGrade(student.Id, day, Model.Subject.Id);
+                        var absence = Model.GetAbsence(student.Id, day, Model.Subject.Id);
+                        <td class="p-0">
+                            <input type="text"
+                                   class="form-control form-control-sm text-center "
+                                   value="@grade"
+                                   data-student="@student.Id"
+                                   data-date="@day.ToString("yyyy-MM-dd")"
+                                   data-type="grade"
+                                   onchange="saveCell(this)"
+                                   style="width: 50px; display: inline-block;" />
+                            @*<input type="checkbox"
+                                title="Відмітити відсутність"
+                                data-student="@student.Id"
+                                data-date="@day.ToString("yyyy-MM-dd")"
+                                data-type="absence"
+                                onchange="saveCell(this)"
+                                @(absence != null ? "checked" : "") />*@
+                        </td>
+                    }
+                    @*@foreach (var custom in Model.CustomColumns)
+                        {
+                            var customGrade = Model.GetCustomGrade(student.Id, custom.Id);
+                            <td class="p-1">
+                                <input type="text"
+                                       class="form-control form-control-sm text-center"
+                                       value="@(customGrade?.Value ?? "")"
+                                       data-student="@student.Id"
+                                       data-custom="@custom.Id"
+                                       data-type="custom"
+                                       onchange="saveCell(this)"
+                                       style="width: 50px; display: inline-block;" />
+                            </td>
+                        }*@
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+
+
+@section Scripts
+{
+    <script>
+    function saveCell(input) {
+    let data = {
+        studentId: input.dataset.student,
+        subjectId: '@Model.Subject.Id', // Додаємо subjectId
+        date: input.dataset.date,
+        type: input.dataset.type,
+        value: input.type === "checkbox" ? input.checked : input.value
+    };
+    fetch('@Url.Action("SaveCell", "Journal")', {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "RequestVerificationToken": $('input[name="__RequestVerificationToken"]').val() },
+        body: JSON.stringify(data)
+    });
+}
+    </script>
+}
+
+<section>
+
+    @*@model EduLog.Models.JournalView
+
+
+        <h1>Журнал: @Model.ClassId (@Model.Subject)</h1>
+
+        <form method="get" asp-action="Index" asp-controller="Journal" class="row g-2 mb-3">
+            <div class="col-auto">
+                <select name="month" class="form-select" onchange="this.form.submit()">
+                    @for (int m = 1; m <= 12; m++)
+                    {
+                        if (m == Model.Month)
+                        {
+                            <option value="@m" selected="selected">
+                                @System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(m)
+                            </option>
+                        }
+                        else
+                        {
+                            <option value="@m">
+                                @System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(m)
+                            </option>
+                        }
+                    }
+                </select>
+                <select name="year" class="form-select" onchange="this.form.submit()">
+                    @for (int y = today.Year - 2; y <= today.Year + 1; y++)
+                    {
+                        if (y == Model.Year)
+                        {
+                            <option value="@y" selected="selected">@y</option>
+                        }
+                        else
+                        {
+                            <option value="@y">@y</option>
+                        }
+                    }
+                </select>
+            </div>
+        </form>
+
+        <form id="addCustomColumnForm" asp-action="AddCustomColumn" asp-controller="Journal" method="post" class="mb-3 row g-2">
+            <input type="hidden" name="classId" value="@Model.ClassId" />
+            <input type="hidden" name="subjectId" value="@Model.SubjectId" />
+            <div class="col-auto">
+                <input type="text" name="columnName" class="form-control" placeholder="Назва додаткового стовпця" required />
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-secondary">Додати стовпець</button>
+            </div>
+        </form>
+
+        <table class="table table-bordered align-middle text-center">
+            <thead>
+                <tr>
+                    <th>Учень</th>
+                    @foreach (var day in Model.DaysOfMonth)
+                    {
+                        <th class="@(day.Date == today ? "table-primary" : "")">
+                            @day.ToString("ddd")<br />@day.ToString("dd.MM")
+                        </th>
+                    }
+
+                    @foreach (var custom in Model.CustomColumns)
+                    {
+                        <th>@custom.Name</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var student in Model.Students)
+                {
+                    <tr>
+                        <td class="text-start">@student.Surname @student.Name</td>
+                        @foreach (var day in Model.DaysOfMonth)
+                        {
+                            var grade = Model.GetGrade(student.Id, day);
+                            var absence = Model.GetAbsence(student.Id, day);
+                            <td class="p-1">
+                                <input type="text"
+                                       class="form-control form-control-sm text-center"
+                                       value="@(grade?.Value ?? "")"
+                                       data-student="@student.Id"
+                                       data-date="@day.ToString("yyyy-MM-dd")"
+                                       data-type="grade"
+                                       onchange="saveCell(this)"
+                                       style="width: 50px; display: inline-block;" />
+                                <input type="checkbox"
+                                       title="Відмітити відсутність"
+                                       data-student="@student.Id"
+                                       data-date="@day.ToString("yyyy-MM-dd")"
+                                       data-type="absence"
+                                       onchange="saveCell(this)"
+                                       @(absence != null ? "checked" : "") />
+                            </td>
+                        }
+                        @foreach (var custom in Model.CustomColumns)
+                        {
+                            var customGrade = Model.GetCustomGrade(student.Id, custom.Id);
+                            <td class="p-1">
+                                <input type="text"
+                                       class="form-control form-control-sm text-center"
+                                       value="@(customGrade?.Value ?? "")"
+                                       data-student="@student.Id"
+                                       data-custom="@custom.Id"
+                                       data-type="custom"
+                                       onchange="saveCell(this)"
+                                       style="width: 50px; display: inline-block;" />
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @section Scripts
+        {
+            <script>
+            function saveCell(input) {
+                let data = {
+                    studentId: input.dataset.student,
+                    date: input.dataset.date,
+                    customId: input.dataset.custom,
+                    type: input.dataset.type,
+                    value: input.type === "checkbox" ? input.checked : input.value
+                };
+                fetch('@Url.Action("SaveCell", "Journal")', {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "RequestVerificationToken": $('input[name="__RequestVerificationToken"]').val() },
+                    body: JSON.stringify(data)
+                });
+            }
+            </script>
+        }*@
+</section>

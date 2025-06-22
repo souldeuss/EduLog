@@ -1,0 +1,62 @@
+﻿@model List<Class>
+@{
+    var cardColors = new[] { "bg-warning", "bg-success", "bg-primary" };
+}
+<h1>Оберіть клас</h1>
+<div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4 mb-3">
+    @for (int i = 0; i < Model.Count; i++)
+    {
+        var cls = Model[i];
+        var colorClass = cardColors[i % cardColors.Length];
+        <div class="col">
+            <a asp-controller="Journal" asp-action="SelectSubject" asp-route-classId="@cls.Id" class="text-decoration-none">
+                <div class="card h-100 text-center align-items-center justify-content-center d-flex @colorClass text-white" style="cursor:pointer; min-height: 120px;">
+                    <span class="fw-bold fs-4">@cls.Name</span>
+                </div>
+            </a>
+        </div>
+    }
+</div>
+
+
+@*
+<!--@model List<Class>
+
+@{
+    var cardColors = new[] { "bg-warning", "bg-success", "bg-primary" };
+    var subjects = ViewData["Subjects"] as List<Subject>;
+    var selectedSubjectId = Context.Request.Query["subjectId"].ToString();
+}
+
+<h1>Оберіть клас</h1>
+@if (subjects.Any())
+{
+    <form method="get" asp-controller="Journal" asp-action="SelectClasses">
+        <div class="mb-3">
+            <label for="subjectSelector" class="form-label">Оберіть предмет</label>
+            <select class="form-select" id="subjectSelector" name="subjectId" onchange="this.form.submit()">-->
+                @*<option value="">Всі предмети</option>
+@foreach (var subject in subjects)
+                {
+                    var isSelected = selectedSubjectId == subject.Id.ToString();
+                    <option value="@subject.Id" selected="@(isSelected ? "selected" : null)">@subject.Name</option>
+                }
+            <!--</select>
+        </div>
+    </form>
+}
+<div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4 mb-3">-->
+    @for (int i = 0; i < Model.Count; i++)
+    {
+        var cls = Model[i];
+        var colorClass = cardColors[i % cardColors.Length];
+        <!--<div class="col">
+            <a asp-controller="Journal" asp-action="Index" asp-route-classId="@cls.Id" asp-route-subjectId="@selectedSubjectId"  class="text-decoration-none">
+                <div class="card h-100 text-center align-items-center justify-content-center d-flex @colorClass text-white" style="cursor:pointer; min-height: 120px;">
+                    <span class="fw-bold fs-4">@cls.Name</span>
+                </div>
+            </a>
+        </div>
+    }
+</div>-->
+    *@
