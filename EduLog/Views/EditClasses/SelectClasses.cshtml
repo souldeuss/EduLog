@@ -8,25 +8,25 @@
 
 @if (User.IsInRole("Admin"))
 {
-    <!-- Форма створення нового класу -->
-    <form asp-controller="EditClasses" asp-action="CreateClass" method="post" class="mb-3 row g-2">
-        <div class="col-auto">
-            <input type="text" name="className" class="form-control" placeholder="Назва нового класу" required />
-        </div>
-        <div class="col-auto">
-            <button type="submit" class="btn btn-primary">Створити клас</button>
-        </div>
-    </form>
+<!-- Форма створення нового класу -->
+<form asp-controller="EditClasses" asp-action="CreateClass" method="post" class="mb-3 row g-2">
+    <div class="col-auto">
+        <input type="text" name="className" class="form-control" placeholder="Назва нового класу" required />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Створити клас</button>
+    </div>
+</form>
 
-    <!-- Форма імпорту класів з .txt -->
-    <form asp-controller="EditClasses" asp-action="ImportClasses" method="post" enctype="multipart/form-data" class="mb-4 row g-2">
-        <div class="col-auto">
-            <input type="file" name="importFile" accept=".txt" class="form-control" required />
-        </div>
-        <div class="col-auto">
-            <button type="submit" class="btn btn-success">Імпортувати з .txt</button>
-        </div>
-    </form>
+<!-- Форма імпорту класів з .txt -->
+<form asp-controller="EditClasses" asp-action="ImportClasses" method="post" enctype="multipart/form-data" class="mb-4 row g-2">
+    <div class="col-auto">
+        <input type="file" name="importFile" accept=".txt" class="form-control" required />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-success">Імпортувати з .txt</button>
+    </div>
+</form>
 }
 
 

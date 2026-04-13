@@ -9,6 +9,8 @@
     string[] monthNames = { "Січень","Лютий","Березень","Квітень","Травень","Червень",
                             "Липень","Серпень","Вересень","Жовтень","Листопад","Грудень" };
 }
+<
+<h1>Журнал: @Model.Class.Name (@Model.Subject.Name)</h1>
 
 <link rel="stylesheet" href="~/css/Journal.css" asp-append-version="true" />
 
@@ -16,40 +18,40 @@
     <h4 class="mb-0 me-3">Журнал:</h4>
     <select id="classSwitcher" class="form-select form-select-sm" style="width:auto;">
         @foreach (var c in allClasses)
-        {
+    {
             <option value="@c.Id" selected="@(c.Id == Model.Class?.Id)">@c.Name</option>
-        }
+    }
     </select>
     <select id="subjectSwitcher" class="form-select form-select-sm" style="width:auto;">
         @foreach (var s in subjectsForClass)
-        {
+    {
             <option value="@s.Id" selected="@(s.Id == Model.Subject?.Id)">@s.Name</option>
-        }
+    }
     </select>
 </div>
 
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
     <div class="btn-group" role="group">
         @foreach (var m in new[] { ("day", "День", "bi-calendar-date"), ("week", "Тиждень", "bi-5-square"), ("month", "Місяць", "bi-calendar3") })
-        {
+    {
             if (viewMode == m.Item1)
             {
                 <button type="button" class="btn btn-primary btn-sm active" disabled>
                     @m.Item2 <i class="bi @m.Item3"></i>
-                </button>
-            }
-            else
-            {
+        </button>
+    }
+    else
+    {
                 <a class="btn btn-outline-primary btn-sm"
-                   asp-action="Index"
-                   asp-route-classId="@Model.Class.Id"
-                   asp-route-subjectId="@Model.Subject.Id"
+           asp-action="Index"
+           asp-route-classId="@Model.Class.Id"
+           asp-route-subjectId="@Model.Subject.Id"
                    asp-route-viewMode="@m.Item1"
                    asp-route-month="@selMonth"
                    asp-route-year="@selYear">
                     @m.Item2 <i class="bi @m.Item3"></i>
-                </a>
-            }
+        </a>
+    }
         }
     </div>
 
@@ -65,7 +67,7 @@
                asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
                asp-route-viewMode="month" asp-route-month="@prevMonth" asp-route-year="@prevYear">
                 <i class="bi bi-chevron-left"></i>
-            </a>
+        </a>
             <strong>@monthNames[selMonth - 1] @selYear</strong>
             <a class="btn btn-outline-secondary btn-sm"
                asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
@@ -108,6 +110,13 @@
                                    data-type="grade"
                                    onchange="saveCell(this)"
                                    style="width: 50px; display: inline-block;" />
+                            @*<input type="checkbox"
+                                title="Відмітити відсутність"
+                                data-student="@student.Id"
+                                data-date="@day.ToString("yyyy-MM-dd")"
+                                data-type="absence"
+                                onchange="saveCell(this)"
+                                @(absence != null ? "checked" : "") />*@
                         </td>
                     }
                     @{
@@ -120,6 +129,8 @@
         </tbody>
     </table>
 </div>
+
+
 
 @section Scripts
 {
@@ -137,23 +148,23 @@
             }
         }
 
-        let data = {
-            studentId: input.dataset.student,
+    let data = {
+        studentId: input.dataset.student,
             subjectId: '@Model.Subject.Id',
-            date: input.dataset.date,
-            type: input.dataset.type,
+        date: input.dataset.date,
+        type: input.dataset.type,
             value: val
-        };
-        fetch('@Url.Action("SaveCell", "Journal")', {
-            method: "POST",
+    };
+    fetch('@Url.Action("SaveCell", "Journal")', {
+        method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
+        body: JSON.stringify(data)
         }).then(function(r) {
             if (!r.ok) {
                 input.value = input.defaultValue;
                 alert('Допустимі значення: 1-12 або Н');
                 return;
-            }
+}
             // Update cell appearance
             var td = input.parentElement;
             if (val.toUpperCase() === 'Н') {
@@ -161,9 +172,23 @@
                 td.classList.add('table-danger');
             } else {
                 td.classList.remove('table-danger');
-            }
+                        }
         });
-    }
+                    }
+                </select>
+            </div>
+        </form>
+
+        <form id="addCustomColumnForm" asp-action="AddCustomColumn" asp-controller="Journal" method="post" class="mb-3 row g-2">
+            <input type="hidden" name="classId" value="@Model.ClassId" />
+            <input type="hidden" name="subjectId" value="@Model.SubjectId" />
+            <div class="col-auto">
+                <input type="text" name="columnName" class="form-control" placeholder="Назва додаткового стовпця" required />
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-secondary">Додати стовпець</button>
+            </div>
+        </form>
 
     function navigateJournal() {
         var classId = document.getElementById('classSwitcher').value;
@@ -171,7 +196,7 @@
         window.location.href = '@Url.Action("Index", "Journal")' +
             '?classId=' + classId + '&subjectId=' + subjectId +
             '&viewMode=@viewMode&month=@selMonth&year=@selYear';
-    }
+                    }
 
     document.getElementById('subjectSwitcher').addEventListener('change', navigateJournal);
 
@@ -190,6 +215,9 @@
                 });
                 if (subjects.length > 0) navigateJournal();
             });
-    });
+                });
     </script>
-}
+            }
+            </script>
+        }*@
+</section>

@@ -161,7 +161,7 @@ namespace EduLog.Migrations
                 });
 
             modelBuilder.Entity("EduLog.Models.Class", b =>
-                {
+                        {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
@@ -181,6 +181,7 @@ namespace EduLog.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Class");
+                        });
                 });
 
             modelBuilder.Entity("EduLog.Models.ClassSubject", b =>
@@ -366,6 +367,328 @@ namespace EduLog.Migrations
                     b.HasIndex("ClassId");
 
                     b.ToTable("Student");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            ClassId = 1,
+                            Name = "Ім'я1",
+                            Patronymic = "По-батькові1",
+                            Surname = "Прізвище1"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            ClassId = 1,
+                            Name = "Ім'я2",
+                            Patronymic = "По-батькові2",
+                            Surname = "Прізвище2"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            ClassId = 1,
+                            Name = "Ім'я3",
+                            Patronymic = "По-батькові3",
+                            Surname = "Прізвище3"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            ClassId = 1,
+                            Name = "Ім'я4",
+                            Patronymic = "По-батькові4",
+                            Surname = "Прізвище4"
+                        },
+                        new
+                        {
+                            Id = 5,
+                            ClassId = 1,
+                            Name = "Ім'я5",
+                            Patronymic = "По-батькові5",
+                            Surname = "Прізвище5"
+                        },
+                        new
+                        {
+                            Id = 6,
+                            ClassId = 1,
+                            Name = "Ім'я6",
+                            Patronymic = "По-батькові6",
+                            Surname = "Прізвище6"
+                        },
+                        new
+                        {
+                            Id = 7,
+                            ClassId = 1,
+                            Name = "Ім'я7",
+                            Patronymic = "По-батькові7",
+                            Surname = "Прізвище7"
+                        },
+                        new
+                        {
+                            Id = 8,
+                            ClassId = 1,
+                            Name = "Ім'я8",
+                            Patronymic = "По-батькові8",
+                            Surname = "Прізвище8"
+                        },
+                        new
+                        {
+                            Id = 9,
+                            ClassId = 1,
+                            Name = "Ім'я9",
+                            Patronymic = "По-батькові9",
+                            Surname = "Прізвище9"
+                        },
+                        new
+                        {
+                            Id = 10,
+                            ClassId = 1,
+                            Name = "Ім'я10",
+                            Patronymic = "По-батькові10",
+                            Surname = "Прізвище10"
+                        },
+                        new
+                        {
+                            Id = 11,
+                            ClassId = 1,
+                            Name = "Ім'я11",
+                            Patronymic = "По-батькові11",
+                            Surname = "Прізвище11"
+                        },
+                        new
+                        {
+                            Id = 12,
+                            ClassId = 1,
+                            Name = "Ім'я12",
+                            Patronymic = "По-батькові12",
+                            Surname = "Прізвище12"
+                        },
+                        new
+                        {
+                            Id = 13,
+                            ClassId = 1,
+                            Name = "Ім'я13",
+                            Patronymic = "По-батькові13",
+                            Surname = "Прізвище13"
+                        },
+                        new
+                        {
+                            Id = 14,
+                            ClassId = 1,
+                            Name = "Ім'я14",
+                            Patronymic = "По-батькові14",
+                            Surname = "Прізвище14"
+                        },
+                        new
+                        {
+                            Id = 15,
+                            ClassId = 1,
+                            Name = "Ім'я15",
+                            Patronymic = "По-батькові15",
+                            Surname = "Прізвище15"
+                        },
+                        new
+                        {
+                            Id = 16,
+                            ClassId = 1,
+                            Name = "Ім'я16",
+                            Patronymic = "По-батькові16",
+                            Surname = "Прізвище16"
+                        },
+                        new
+                        {
+                            Id = 17,
+                            ClassId = 1,
+                            Name = "Ім'я17",
+                            Patronymic = "По-батькові17",
+                            Surname = "Прізвище17"
+                        },
+                        new
+                        {
+                            Id = 18,
+                            ClassId = 1,
+                            Name = "Ім'я18",
+                            Patronymic = "По-батькові18",
+                            Surname = "Прізвище18"
+                        },
+                        new
+                        {
+                            Id = 19,
+                            ClassId = 1,
+                            Name = "Ім'я19",
+                            Patronymic = "По-батькові19",
+                            Surname = "Прізвище19"
+                        },
+                        new
+                        {
+                            Id = 20,
+                            ClassId = 1,
+                            Name = "Ім'я20",
+                            Patronymic = "По-батькові20",
+                            Surname = "Прізвище20"
+                        },
+                        new
+                        {
+                            Id = 21,
+                            ClassId = 2,
+                            Name = "Ім'я21",
+                            Patronymic = "По-батькові21",
+                            Surname = "Прізвище21"
+                        },
+                        new
+                        {
+                            Id = 22,
+                            ClassId = 2,
+                            Name = "Ім'я22",
+                            Patronymic = "По-батькові22",
+                            Surname = "Прізвище22"
+                        },
+                        new
+                        {
+                            Id = 23,
+                            ClassId = 2,
+                            Name = "Ім'я23",
+                            Patronymic = "По-батькові23",
+                            Surname = "Прізвище23"
+                        },
+                        new
+                        {
+                            Id = 24,
+                            ClassId = 2,
+                            Name = "Ім'я24",
+                            Patronymic = "По-батькові24",
+                            Surname = "Прізвище24"
+                        },
+                        new
+                        {
+                            Id = 25,
+                            ClassId = 2,
+                            Name = "Ім'я25",
+                            Patronymic = "По-батькові25",
+                            Surname = "Прізвище25"
+                        },
+                        new
+                        {
+                            Id = 26,
+                            ClassId = 2,
+                            Name = "Ім'я26",
+                            Patronymic = "По-батькові26",
+                            Surname = "Прізвище26"
+                        },
+                        new
+                        {
+                            Id = 27,
+                            ClassId = 2,
+                            Name = "Ім'я27",
+                            Patronymic = "По-батькові27",
+                            Surname = "Прізвище27"
+                        },
+                        new
+                        {
+                            Id = 28,
+                            ClassId = 2,
+                            Name = "Ім'я28",
+                            Patronymic = "По-батькові28",
+                            Surname = "Прізвище28"
+                        },
+                        new
+                        {
+                            Id = 29,
+                            ClassId = 2,
+                            Name = "Ім'я29",
+                            Patronymic = "По-батькові29",
+                            Surname = "Прізвище29"
+                        },
+                        new
+                        {
+                            Id = 30,
+                            ClassId = 2,
+                            Name = "Ім'я30",
+                            Patronymic = "По-батькові30",
+                            Surname = "Прізвище30"
+                        },
+                        new
+                        {
+                            Id = 31,
+                            ClassId = 2,
+                            Name = "Ім'я31",
+                            Patronymic = "По-батькові31",
+                            Surname = "Прізвище31"
+                        },
+                        new
+                        {
+                            Id = 32,
+                            ClassId = 2,
+                            Name = "Ім'я32",
+                            Patronymic = "По-батькові32",
+                            Surname = "Прізвище32"
+                        },
+                        new
+                        {
+                            Id = 33,
+                            ClassId = 2,
+                            Name = "Ім'я33",
+                            Patronymic = "По-батькові33",
+                            Surname = "Прізвище33"
+                        },
+                        new
+                        {
+                            Id = 34,
+                            ClassId = 2,
+                            Name = "Ім'я34",
+                            Patronymic = "По-батькові34",
+                            Surname = "Прізвище34"
+                        },
+                        new
+                        {
+                            Id = 35,
+                            ClassId = 2,
+                            Name = "Ім'я35",
+                            Patronymic = "По-батькові35",
+                            Surname = "Прізвище35"
+                        },
+                        new
+                        {
+                            Id = 36,
+                            ClassId = 2,
+                            Name = "Ім'я36",
+                            Patronymic = "По-батькові36",
+                            Surname = "Прізвище36"
+                        },
+                        new
+                        {
+                            Id = 37,
+                            ClassId = 2,
+                            Name = "Ім'я37",
+                            Patronymic = "По-батькові37",
+                            Surname = "Прізвище37"
+                        },
+                        new
+                        {
+                            Id = 38,
+                            ClassId = 2,
+                            Name = "Ім'я38",
+                            Patronymic = "По-батькові38",
+                            Surname = "Прізвище38"
+                        },
+                        new
+                        {
+                            Id = 39,
+                            ClassId = 2,
+                            Name = "Ім'я39",
+                            Patronymic = "По-батькові39",
+                            Surname = "Прізвище39"
+                        },
+                        new
+                        {
+                            Id = 40,
+                            ClassId = 2,
+                            Name = "Ім'я40",
+                            Patronymic = "По-батькові40",
+                            Surname = "Прізвище40"
+                        });
                 });
 
             modelBuilder.Entity("EduLog.Models.Subject", b =>
@@ -394,6 +717,15 @@ namespace EduLog.Migrations
                     b.HasIndex("TeacherId");
 
                     b.ToTable("Subject");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            ClassId = 1,
+                            Name = "Англійська мова",
+                            TeacherId = 1
+                        });
                 });
 
             modelBuilder.Entity("EduLog.Models.Teacher", b =>
@@ -528,7 +860,7 @@ namespace EduLog.Migrations
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<string>", b =>
-                {
+                        {
                     b.Property<string>("UserId")
                         .HasColumnType("nvarchar(450)");
 
@@ -540,7 +872,7 @@ namespace EduLog.Migrations
                     b.HasIndex("RoleId");
 
                     b.ToTable("AspNetUserRoles", (string)null);
-                });
+                        });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<string>", b =>
                 {

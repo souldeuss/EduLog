@@ -33,6 +33,7 @@ namespace EduLog.Controllers
             int selectedMonth = month ?? now.Month;
             int selectedYear = year ?? now.Year;
 
+            // Визначаємо дні для різних режимів
             List<DateTime> days;
             if (viewMode == "day")
             {
@@ -40,6 +41,7 @@ namespace EduLog.Controllers
             }
             else if (viewMode == "week")
             {
+                // Поточний тиждень (понеділок-п'ятниця)
                 int diff = (7 + (now.DayOfWeek - DayOfWeek.Monday)) % 7;
                 DateTime monday = now.AddDays(-1 * diff).Date;
                 days = Enumerable.Range(0, 5).Select(i => monday.AddDays(i)).ToList();
@@ -135,6 +137,7 @@ namespace EduLog.Controllers
                 return RedirectToAction("SelectSubject", new { classId = classes[0].Id });
             else
                 return RedirectToAction("SelectClasses");
+            return View();
         }
 
         public async Task<IActionResult> SelectSubject(int classId)
@@ -178,6 +181,7 @@ namespace EduLog.Controllers
             if (request == null)
                 return BadRequest();
 
+            // Парсимо дату
             if (!DateTime.TryParse(request.Date, out var date))
                 return BadRequest();
 
@@ -232,6 +236,7 @@ namespace EduLog.Controllers
 
             if (grade == null)
             {
+                // Додаємо нову оцінку
                 grade = new Grade
                 {
                     StudentId = request.StudentId,
@@ -259,5 +264,6 @@ namespace EduLog.Controllers
             public string Type { get; set; }
             public object Value { get; set; }
         }
+
     }
 }

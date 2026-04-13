@@ -56,7 +56,7 @@
                         </a>
                     </td>
                 </tr>
-            }
+}
         </tbody>
     </table>
 </div>
@@ -65,14 +65,24 @@
 <div id="viewList" class="mb-3" style="display:none;">
     <div class="list-group">
         @foreach (var cls in Model)
-        {
+{
             <a asp-controller="Journal" asp-action="SelectSubject" asp-route-classId="@cls.Id"
                class="list-group-item list-group-item-action class-item" data-name="@cls.Name.ToLower()">
                 <i class="bi bi-mortarboard"></i> @cls.Name
             </a>
-        }
-    </div>
-</div>
+}
+<div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4 mb-3">-->
+    @for (int i = 0; i < Model.Count; i++)
+    {
+        var cls = Model[i];
+        var colorClass = cardColors[i % cardColors.Length];
+        <!--<div class="col">
+            <a asp-controller="Journal" asp-action="Index" asp-route-classId="@cls.Id" asp-route-subjectId="@selectedSubjectId"  class="text-decoration-none">
+                <div class="card h-100 text-center align-items-center justify-content-center d-flex @colorClass text-white" style="cursor:pointer; min-height: 120px;">
+                    <span class="fw-bold fs-4">@cls.Name</span>
+                </div>
+            </a>
+        </div>
 
 @section Scripts {
 <script>
@@ -104,4 +114,6 @@
         if (saved) setMode(saved);
     });
 </script>
-}
+    }
+</div>-->
+    *@
