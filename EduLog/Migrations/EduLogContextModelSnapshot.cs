@@ -182,7 +182,6 @@ namespace EduLog.Migrations
 
                     b.ToTable("Class");
                         });
-                });
 
             modelBuilder.Entity("EduLog.Models.ClassSubject", b =>
                 {

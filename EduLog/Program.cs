@@ -4,7 +4,29 @@ using EduLog.Data;
 using EduLog.Models;
 using EduLog.Services;
 
-var builder = WebApplication.CreateBuilder(args);
+// Find the project root directory by walking up from bin folder
+string contentRootPath = AppContext.BaseDirectory;
+
+// Keep going up until we find a directory with a Views folder
+for (int i = 0; i < 10; i++) // Safety limit to prevent infinite loops
+{
+    if (Directory.Exists(Path.Combine(contentRootPath, "Views")))
+    {
+        break;
+    }
+
+    var parentDir = Directory.GetParent(contentRootPath);
+    if (parentDir == null)
+        break;
+
+    contentRootPath = parentDir.FullName;
+}
+
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = contentRootPath
+});
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
@@ -29,7 +51,6 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantService, TenantService>();
 builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, CustomClaimsPrincipalFactory>();
-builder.WebHost.UseUrls("http://192.168.0.101:5000", "https://192.168.0.101:5001");
 builder.Services.ConfigureApplicationCookie(options =>
 {
     options.LoginPath = "/Account/Login";
@@ -37,6 +58,11 @@ builder.Services.ConfigureApplicationCookie(options =>
 });
 
 var app = builder.Build();
+
+app.Logger.LogInformation("Content root path: {ContentRootPath}", app.Environment.ContentRootPath);
+app.Logger.LogInformation("Views folder exists: {ViewsExists}", Directory.Exists(Path.Combine(app.Environment.ContentRootPath, "Views")));
+app.Logger.LogInformation("Home folder exists: {HomeExists}", Directory.Exists(Path.Combine(app.Environment.ContentRootPath, "Views", "Home")));
+app.Logger.LogInformation("Index.cshtml exists: {IndexExists}", File.Exists(Path.Combine(app.Environment.ContentRootPath, "Views", "Home", "Index.cshtml")));
 
 // Seed roles
 using (var scope = app.Services.CreateScope())

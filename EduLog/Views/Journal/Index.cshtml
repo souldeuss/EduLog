@@ -38,7 +38,7 @@
             {
                 <button type="button" class="btn btn-primary btn-sm active" disabled>
                     @m.Item2 <i class="bi @m.Item3"></i>
-        </button>
+                </button>
     }
     else
     {
@@ -135,89 +135,72 @@
 @section Scripts
 {
     <script>
-    function saveCell(input) {
-        var val = input.value.trim();
+        function saveCell(input) {
+            var val = input.value.trim();
 
-        // Client-side validation: empty, 1-12, or Н/н
-        if (val !== '' && val.toUpperCase() !== 'Н') {
-            var num = parseInt(val);
-            if (isNaN(num) || num < 1 || num > 12) {
-                alert('Допустимі значення: 1-12 або Н');
-                input.value = input.defaultValue;
-                return;
+            // Client-side validation: empty, 1-12, or Н/н
+            if (val !== '' && val.toUpperCase() !== 'Н') {
+                var num = parseInt(val);
+                if (isNaN(num) || num < 1 || num > 12) {
+                    alert('Допустимі значення: 1-12 або Н');
+                    input.value = input.defaultValue;
+                    return;
+                }
             }
+
+            let data = {
+                studentId: input.dataset.student,
+                subjectId: '@Model.Subject.Id',
+                date: input.dataset.date,
+                type: input.dataset.type,
+                value: val
+            };
+            fetch('@Url.Action("SaveCell", "Journal")', {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+            }).then(function(r) {
+                if (!r.ok) {
+                    input.value = input.defaultValue;
+                    alert('Допустимі значення: 1-12 або Н');
+                    return;
+                }
+                // Update cell appearance
+                var td = input.parentElement;
+                if (val.toUpperCase() === 'Н') {
+                    input.value = 'Н';
+                    td.classList.add('table-danger');
+                } else {
+                    td.classList.remove('table-danger');
+                }
+            });
         }
 
-    let data = {
-        studentId: input.dataset.student,
-            subjectId: '@Model.Subject.Id',
-        date: input.dataset.date,
-        type: input.dataset.type,
-            value: val
-    };
-    fetch('@Url.Action("SaveCell", "Journal")', {
-        method: "POST",
-            headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-        }).then(function(r) {
-            if (!r.ok) {
-                input.value = input.defaultValue;
-                alert('Допустимі значення: 1-12 або Н');
-                return;
-}
-            // Update cell appearance
-            var td = input.parentElement;
-            if (val.toUpperCase() === 'Н') {
-                input.value = 'Н';
-                td.classList.add('table-danger');
-            } else {
-                td.classList.remove('table-danger');
-                        }
+        function navigateJournal() {
+            var classId = document.getElementById('classSwitcher').value;
+            var subjectId = document.getElementById('subjectSwitcher').value;
+            window.location.href = '@Url.Action("Index", "Journal")' +
+                '?classId=' + classId + '&subjectId=' + subjectId +
+                '&viewMode=@viewMode&month=@selMonth&year=@selYear';
+        }
+
+        document.getElementById('subjectSwitcher').addEventListener('change', navigateJournal);
+
+        document.getElementById('classSwitcher').addEventListener('change', function () {
+            var classId = this.value;
+            fetch('@Url.Action("GetSubjectsForClass", "Journal")' + '?classId=' + classId)
+                .then(r => r.json())
+                .then(function (subjects) {
+                    var sel = document.getElementById('subjectSwitcher');
+                    sel.innerHTML = '';
+                    subjects.forEach(function (s) {
+                        var opt = document.createElement('option');
+                        opt.value = s.id;
+                        opt.textContent = s.name;
+                        sel.appendChild(opt);
+                    });
+                    if (subjects.length > 0) navigateJournal();
+                });
         });
-                    }
-                </select>
-            </div>
-        </form>
-
-        <form id="addCustomColumnForm" asp-action="AddCustomColumn" asp-controller="Journal" method="post" class="mb-3 row g-2">
-            <input type="hidden" name="classId" value="@Model.ClassId" />
-            <input type="hidden" name="subjectId" value="@Model.SubjectId" />
-            <div class="col-auto">
-                <input type="text" name="columnName" class="form-control" placeholder="Назва додаткового стовпця" required />
-            </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-secondary">Додати стовпець</button>
-            </div>
-        </form>
-
-    function navigateJournal() {
-        var classId = document.getElementById('classSwitcher').value;
-        var subjectId = document.getElementById('subjectSwitcher').value;
-        window.location.href = '@Url.Action("Index", "Journal")' +
-            '?classId=' + classId + '&subjectId=' + subjectId +
-            '&viewMode=@viewMode&month=@selMonth&year=@selYear';
-                    }
-
-    document.getElementById('subjectSwitcher').addEventListener('change', navigateJournal);
-
-    document.getElementById('classSwitcher').addEventListener('change', function () {
-        var classId = this.value;
-        fetch('@Url.Action("GetSubjectsForClass", "Journal")' + '?classId=' + classId)
-            .then(r => r.json())
-            .then(function (subjects) {
-                var sel = document.getElementById('subjectSwitcher');
-                sel.innerHTML = '';
-                subjects.forEach(function (s) {
-                    var opt = document.createElement('option');
-                    opt.value = s.id;
-                    opt.textContent = s.name;
-                    sel.appendChild(opt);
-                });
-                if (subjects.length > 0) navigateJournal();
-            });
-                });
     </script>
-            }
-            </script>
-        }*@
-</section>
+}
