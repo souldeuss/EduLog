@@ -3,6 +3,8 @@
 @{
     ViewData["Title"] = "Вчителі";
     var users = ViewData["Users"] as List<EduLog.Models.ApplicationUser> ?? new();
+    var allSubjects = ViewData["AllSubjects"] as List<EduLog.Models.Subject> ?? new();
+    var error = TempData["Error"] as string;
 }
 
 <partial name="_AdminNav" />
@@ -14,25 +16,521 @@
     <a asp-action="InviteTeacher">Запрошення</a>.
 </p>
 
-<table class="table table-hover">
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="mb-3 col-md-6">
+    <input id="teacherSearchInput" class="form-control" placeholder="Пошук за прізвищем, ім'ям або email" />
+</div>
+
+<table class="table table-hover" id="teachersTable"
+       data-details-url-template="@Url.Action("TeacherDetails", "Admin", new { id = "__id__" })"
+       data-assign-url="@Url.Action("AssignSubjectToTeacher", "Admin")"
+       data-unassign-url="@Url.Action("UnassignSubjectFromTeacher", "Admin")">
     <thead>
         <tr>
-            <th>Прізвище</th>
-            <th>Ім'я</th>
-            <th>По батькові</th>
-            <th>Email</th>
+            <th>
+                <button type="button" class="btn btn-link p-0 text-decoration-none sort-header" data-sort-key="surname">
+                    Прізвище <span class="sort-indicator">↕</span>
+                </button>
+            </th>
+            <th>
+                <button type="button" class="btn btn-link p-0 text-decoration-none sort-header" data-sort-key="name">
+                    Ім'я <span class="sort-indicator">↕</span>
+                </button>
+            </th>
+            <th>
+                <button type="button" class="btn btn-link p-0 text-decoration-none sort-header" data-sort-key="patronymic">
+                    По батькові <span class="sort-indicator">↕</span>
+                </button>
+            </th>
+            <th>
+                <button type="button" class="btn btn-link p-0 text-decoration-none sort-header" data-sort-key="email">
+                    Email <span class="sort-indicator">↕</span>
+                </button>
+            </th>
+            <th>Телефон</th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
         @foreach (var t in Model)
         {
             var user = users.FirstOrDefault(u => u.TeacherId == t.Id);
-            <tr>
-                <td><strong>@t.Surname</strong></td>
-                <td>@t.Name</td>
-                <td>@t.Patronymic</td>
-                <td>@(user?.Email ?? "—")</td>
+            var email = user?.Email ?? "";
+            var phone = user?.PhoneNumber ?? "";
+            var searchText = $"{t.Surname} {t.Name} {email}".ToLowerInvariant();
+
+            <tr class="teacher-main-row"
+                data-teacher-row="@t.Id"
+                data-search-text="@searchText"
+                data-sort-surname="@t.Surname.ToLowerInvariant()"
+                data-sort-name="@t.Name.ToLowerInvariant()"
+                data-sort-patronymic="@(t.Patronymic?.ToLowerInvariant() ?? string.Empty)"
+                data-sort-email="@email.ToLowerInvariant()"
+                style="cursor:pointer">
+                <td class="teacher-surname"><strong>@t.Surname</strong></td>
+                <td class="teacher-name">@t.Name</td>
+                <td class="teacher-patronymic">@t.Patronymic</td>
+                <td class="teacher-email">@(string.IsNullOrWhiteSpace(email) ? "—" : email)</td>
+                <td class="teacher-phone">@(string.IsNullOrWhiteSpace(phone) ? "—" : phone)</td>
+                <td class="text-end">
+                    <button type="button" class="btn btn-sm btn-outline-primary"
+                            data-bs-toggle="collapse" data-bs-target="#edit-@t.Id">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                </td>
+            </tr>
+            <tr class="collapse" id="edit-@t.Id" data-teacher-detail-row="@t.Id">
+                <td colspan="6">
+                    <form asp-action="EditTeacher" method="post" class="row g-2 align-items-end teacher-edit-form" data-teacher-id="@t.Id">
+                        <input type="hidden" name="id" value="@t.Id" />
+                        <div class="col-md-3">
+                            <label class="form-label form-label-sm">Ім'я</label>
+                            <input name="name" class="form-control form-control-sm" value="@t.Name" required />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label form-label-sm">Прізвище</label>
+                            <input name="surname" class="form-control form-control-sm" value="@t.Surname" required />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label form-label-sm">По батькові</label>
+                            <input name="patronymic" class="form-control form-control-sm" value="@t.Patronymic" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label form-label-sm">Телефон</label>
+                            <input name="phone" class="form-control form-control-sm" value="@phone" />
+                        </div>
+                        <div class="col-md-1">
+                            <button class="btn btn-sm btn-primary w-100"><i class="bi bi-check-lg"></i></button>
+                        </div>
+                    </form>
+                    <div class="small text-danger mt-1 d-none teacher-edit-error"></div>
+                </td>
             </tr>
         }
     </tbody>
 </table>
+
+<div class="offcanvas offcanvas-end" tabindex="-1" id="teacherDetailsPanel" aria-labelledby="teacherDetailsPanelLabel">
+    <div class="offcanvas-header">
+        <h5 class="offcanvas-title" id="teacherDetailsPanelLabel">Деталі вчителя</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body">
+        <div id="teacherDetailsLoading" class="text-muted">Завантаження...</div>
+        <div id="teacherDetailsContent" class="d-none">
+            <h6 class="mb-2">Особиста інформація</h6>
+            <div class="mb-3">
+                <div><strong id="detailsFullName">—</strong></div>
+                <div class="text-muted" id="detailsEmail">—</div>
+                <div class="text-muted" id="detailsPhone">—</div>
+            </div>
+
+            <h6 class="mb-2">Предмети</h6>
+            <div id="teacherSubjects" class="mb-2 d-flex flex-wrap gap-2"></div>
+            <div class="input-group input-group-sm mb-3">
+                <select id="addSubjectSelect" class="form-select"></select>
+                <button id="addSubjectBtn" class="btn btn-outline-success" type="button">+ додати</button>
+            </div>
+
+            <h6 class="mb-2">Класи у розкладі</h6>
+            <div id="teacherClasses" class="d-flex flex-wrap gap-2"></div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (() => {
+            const allSubjects = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(allSubjects.Select(s => new { id = s.Id, name = s.Name })));
+            const table = document.getElementById('teachersTable');
+            const searchInput = document.getElementById('teacherSearchInput');
+            const offcanvasEl = document.getElementById('teacherDetailsPanel');
+            const loadingEl = document.getElementById('teacherDetailsLoading');
+            const contentEl = document.getElementById('teacherDetailsContent');
+            const detailsNameEl = document.getElementById('detailsFullName');
+            const detailsEmailEl = document.getElementById('detailsEmail');
+            const detailsPhoneEl = document.getElementById('detailsPhone');
+            const subjectsEl = document.getElementById('teacherSubjects');
+            const classesEl = document.getElementById('teacherClasses');
+            const addSubjectSelect = document.getElementById('addSubjectSelect');
+            const addSubjectBtn = document.getElementById('addSubjectBtn');
+
+            if (!table) {
+                return;
+            }
+
+            const detailsUrlTemplate = table.dataset.detailsUrlTemplate || '';
+            const assignUrl = table.dataset.assignUrl || '';
+            const unassignUrl = table.dataset.unassignUrl || '';
+            const offcanvas = offcanvasEl ? bootstrap.Offcanvas.getOrCreateInstance(offcanvasEl) : null;
+            const sortButtons = Array.from(document.querySelectorAll('#teachersTable .sort-header'));
+            const mainRows = Array.from(document.querySelectorAll('#teachersTable tbody tr[data-teacher-row]'));
+            const sortState = { key: null, direction: 1 };
+
+            let currentTeacherId = null;
+            let currentTeacherDetails = null;
+
+            function getSortableValue(row, key) {
+                return (row.dataset[`sort${key.charAt(0).toUpperCase()}${key.slice(1)}`] || '').trim();
+            }
+
+            function getRowPairs() {
+                const pairs = [];
+                const currentMainRows = Array.from(document.querySelectorAll('#teachersTable tbody tr[data-teacher-row]'));
+                currentMainRows.forEach(main => {
+                    const teacherId = main.getAttribute('data-teacher-row');
+                    const detail = teacherId ? getDetailRow(teacherId) : null;
+                    pairs.push({ main, detail });
+                });
+                return pairs;
+            }
+
+            function updateSortIndicators() {
+                sortButtons.forEach(button => {
+                    const indicator = button.querySelector('.sort-indicator');
+                    if (!indicator) {
+                        return;
+                    }
+
+                    if (button.dataset.sortKey !== sortState.key) {
+                        indicator.textContent = '↕';
+                    } else {
+                        indicator.textContent = sortState.direction === 1 ? '↑' : '↓';
+                    }
+                });
+            }
+
+            function applySort(key) {
+                const tbody = table.querySelector('tbody');
+                if (!tbody) {
+                    return;
+                }
+
+                if (sortState.key === key) {
+                    sortState.direction *= -1;
+                } else {
+                    sortState.key = key;
+                    sortState.direction = 1;
+                }
+
+                const pairs = getRowPairs();
+                pairs.sort((a, b) => {
+                    const aValue = getSortableValue(a.main, sortState.key);
+                    const bValue = getSortableValue(b.main, sortState.key);
+                    return aValue.localeCompare(bValue, 'uk') * sortState.direction;
+                });
+
+                pairs.forEach(pair => {
+                    tbody.appendChild(pair.main);
+                    if (pair.detail) {
+                        tbody.appendChild(pair.detail);
+                    }
+                });
+
+                updateSortIndicators();
+                searchInput?.dispatchEvent(new Event('input'));
+            }
+
+            sortButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const key = button.dataset.sortKey;
+                    if (key) {
+                        applySort(key);
+                    }
+                });
+            });
+
+            updateSortIndicators();
+            applySort('surname');
+
+            function escapeHtml(value) {
+                return (value || '').replace(/[&<>'"]/g, char => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '\'': '&#39;',
+                    '"': '&quot;'
+                })[char]);
+            }
+
+            function buildDetailsUrl(id) {
+                return detailsUrlTemplate.replace('__id__', String(id));
+            }
+
+            function getDetailRow(teacherId) {
+                return document.querySelector(`#teachersTable tbody tr[data-teacher-detail-row='${teacherId}']`);
+            }
+
+            function setDetailsLoading(isLoading) {
+                if (!loadingEl || !contentEl) {
+                    return;
+                }
+
+                loadingEl.classList.toggle('d-none', !isLoading);
+                contentEl.classList.toggle('d-none', isLoading);
+            }
+
+            function renderAddSubjects(subjects) {
+                if (!addSubjectSelect || !addSubjectBtn) {
+                    return;
+                }
+
+                const assignedIds = new Set((subjects || []).map(s => s.id));
+                const available = allSubjects.filter(s => !assignedIds.has(s.id));
+
+                addSubjectSelect.innerHTML = '';
+                available.forEach(subject => {
+                    const option = document.createElement('option');
+                    option.value = String(subject.id);
+                    option.textContent = subject.name;
+                    addSubjectSelect.appendChild(option);
+                });
+
+                addSubjectSelect.disabled = available.length === 0;
+                addSubjectBtn.disabled = available.length === 0;
+            }
+
+            function renderSubjects(subjects) {
+                if (!subjectsEl) {
+                    return;
+                }
+
+                subjectsEl.innerHTML = '';
+                if (!subjects || subjects.length === 0) {
+                    subjectsEl.innerHTML = '<span class="text-muted">Немає предметів</span>';
+                    renderAddSubjects([]);
+                    return;
+                }
+
+                subjects.forEach(subject => {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge bg-primary-subtle text-primary border border-primary-subtle d-inline-flex align-items-center gap-1';
+                    badge.innerHTML = `${escapeHtml(subject.name)} <button type="button" class="btn-close btn-close-sm" data-unassign-subject-id="${subject.id}" style="font-size:8px"></button>`;
+                    subjectsEl.appendChild(badge);
+                });
+
+                renderAddSubjects(subjects);
+            }
+
+            function renderClasses(classes) {
+                if (!classesEl) {
+                    return;
+                }
+
+                classesEl.innerHTML = '';
+                if (!classes || classes.length === 0) {
+                    classesEl.innerHTML = '<span class="text-muted">У розкладі ще немає класів</span>';
+                    return;
+                }
+
+                classes.forEach(cls => {
+                    const chip = document.createElement('span');
+                    chip.className = 'badge bg-secondary-subtle text-secondary border border-secondary-subtle';
+                    chip.textContent = cls.name;
+                    classesEl.appendChild(chip);
+                });
+            }
+
+            async function loadTeacherDetails(teacherId) {
+                currentTeacherId = teacherId;
+                setDetailsLoading(true);
+                offcanvas?.show();
+
+                try {
+                    const response = await fetch(buildDetailsUrl(teacherId), {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Не вдалося завантажити дані вчителя.');
+                    }
+
+                    const details = await response.json();
+                    currentTeacherDetails = details;
+                    const fullName = `${details.surname || ''} ${details.name || ''} ${details.patronymic || ''}`.trim();
+
+                    if (detailsNameEl) detailsNameEl.textContent = fullName || '—';
+                    if (detailsEmailEl) detailsEmailEl.textContent = details.email || '—';
+                    if (detailsPhoneEl) detailsPhoneEl.textContent = details.phone || '—';
+
+                    renderSubjects(details.subjects || []);
+                    renderClasses(details.classes || []);
+                    setDetailsLoading(false);
+                } catch {
+                    if (loadingEl) {
+                        loadingEl.textContent = 'Помилка завантаження даних.';
+                    }
+                }
+            }
+
+            function updateTeacherRow(data) {
+                const row = document.querySelector(`#teachersTable tbody tr[data-teacher-row='${data.id}']`);
+                const detailRow = getDetailRow(data.id);
+                if (!row) {
+                    return;
+                }
+
+                const surnameEl = row.querySelector('.teacher-surname');
+                const nameEl = row.querySelector('.teacher-name');
+                const patronymicEl = row.querySelector('.teacher-patronymic');
+                const emailEl = row.querySelector('.teacher-email');
+                const phoneEl = row.querySelector('.teacher-phone');
+
+                if (surnameEl) surnameEl.innerHTML = `<strong>${escapeHtml(data.surname)}</strong>`;
+                if (nameEl) nameEl.textContent = data.name || '';
+                if (patronymicEl) patronymicEl.textContent = data.patronymic || '';
+                if (emailEl) emailEl.textContent = data.email || '—';
+                if (phoneEl) phoneEl.textContent = data.phone || '—';
+
+                row.dataset.searchText = `${data.surname || ''} ${data.name || ''} ${data.email || ''}`.toLowerCase();
+                row.dataset.sortSurname = (data.surname || '').toLowerCase();
+                row.dataset.sortName = (data.name || '').toLowerCase();
+                row.dataset.sortPatronymic = (data.patronymic || '').toLowerCase();
+                row.dataset.sortEmail = (data.email || '').toLowerCase();
+
+                if (detailRow) {
+                    const form = detailRow.querySelector('form.teacher-edit-form');
+                    if (form) {
+                        const nameInput = form.querySelector('input[name="name"]');
+                        const surnameInput = form.querySelector('input[name="surname"]');
+                        const patronymicInput = form.querySelector('input[name="patronymic"]');
+                        const phoneInput = form.querySelector('input[name="phone"]');
+
+                        if (nameInput) nameInput.value = data.name || '';
+                        if (surnameInput) surnameInput.value = data.surname || '';
+                        if (patronymicInput) patronymicInput.value = data.patronymic || '';
+                        if (phoneInput) phoneInput.value = data.phone || '';
+                    }
+                }
+            }
+
+            if (searchInput) {
+                searchInput.addEventListener('input', () => {
+                    const query = searchInput.value.trim().toLowerCase();
+
+                    mainRows.forEach(row => {
+                        const match = !query || (row.dataset.searchText || '').includes(query);
+                        const teacherId = row.getAttribute('data-teacher-row');
+                        const detailRow = teacherId ? getDetailRow(teacherId) : null;
+
+                        row.style.display = match ? '' : 'none';
+
+                        if (detailRow) {
+                            if (!match) {
+                                detailRow.classList.remove('show');
+                            }
+
+                            detailRow.style.display = match ? '' : 'none';
+                        }
+                    });
+                });
+            }
+
+            table.addEventListener('click', event => {
+                const row = event.target.closest('tr.teacher-main-row');
+                if (!row) {
+                    return;
+                }
+
+                if (event.target.closest('button, a, input, select, textarea, form')) {
+                    return;
+                }
+
+                const teacherId = Number(row.dataset.teacherRow || 0);
+                if (teacherId > 0) {
+                    loadTeacherDetails(teacherId);
+                }
+            });
+
+            document.querySelectorAll('form.teacher-edit-form').forEach(form => {
+                form.addEventListener('submit', async event => {
+                    event.preventDefault();
+                    const errorEl = form.parentElement?.querySelector('.teacher-edit-error');
+                    if (errorEl) {
+                        errorEl.classList.add('d-none');
+                        errorEl.textContent = '';
+                    }
+
+                    try {
+                        const response = await fetch(form.action, {
+                            method: 'POST',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                            },
+                            body: new URLSearchParams(new FormData(form)).toString()
+                        });
+
+                        const payload = await response.json();
+                        if (!response.ok || !payload.success) {
+                            throw new Error(payload.message || 'Не вдалося зберегти зміни.');
+                        }
+
+                        updateTeacherRow(payload);
+
+                        const teacherId = Number(form.dataset.teacherId || 0);
+                        if (currentTeacherId === teacherId) {
+                            await loadTeacherDetails(teacherId);
+                        }
+                    } catch (error) {
+                        if (errorEl) {
+                            errorEl.textContent = error.message || 'Помилка збереження.';
+                            errorEl.classList.remove('d-none');
+                        }
+                    }
+                });
+            });
+
+            subjectsEl?.addEventListener('click', async event => {
+                const button = event.target.closest('[data-unassign-subject-id]');
+                if (!button || !currentTeacherId) {
+                    return;
+                }
+
+                const subjectId = Number(button.getAttribute('data-unassign-subject-id'));
+                if (!subjectId) {
+                    return;
+                }
+
+                const response = await fetch(unassignUrl, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                    },
+                    body: new URLSearchParams({ teacherId: String(currentTeacherId), subjectId: String(subjectId) }).toString()
+                });
+
+                if (response.ok) {
+                    await loadTeacherDetails(currentTeacherId);
+                }
+            });
+
+            addSubjectBtn?.addEventListener('click', async () => {
+                if (!currentTeacherId || !addSubjectSelect || !addSubjectSelect.value) {
+                    return;
+                }
+
+                const response = await fetch(assignUrl, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                    },
+                    body: new URLSearchParams({
+                        teacherId: String(currentTeacherId),
+                        subjectId: String(addSubjectSelect.value)
+                    }).toString()
+                });
+
+                if (response.ok) {
+                    await loadTeacherDetails(currentTeacherId);
+                }
+            });
+        })();
+    </script>
+}

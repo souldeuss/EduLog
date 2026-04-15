@@ -10,6 +10,8 @@ namespace EduLog.Models
         [Required]
         public string Name { get; set; } // Наприклад: "10-А", "9-Б"
         public int? TeacherId { get; set; }
+        public int? RoomId { get; set; }
+        public Room? Room { get; set; }
 
         public ICollection<ClassSubject> ClassSubjects { get; set; }
     }

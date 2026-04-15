@@ -12,5 +12,7 @@ namespace EduLog.Models
         public string Surname { get; set; }
         public string Patronymic { get; set; }
         public string PhotoPath { get; set; }
+
+        public ICollection<SubjectTeacher> SubjectTeachers { get; set; } = new List<SubjectTeacher>();
     }
 }

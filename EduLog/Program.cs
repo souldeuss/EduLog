@@ -5,6 +5,7 @@ using EduLog.Models;
 using EduLog.Services;
 using Microsoft.Extensions.Options;
 using Polly;
+using Resend;
 
 // Find the project root directory by walking up from bin folder
 string contentRootPath = AppContext.BaseDirectory;
@@ -73,6 +74,9 @@ builder.Services.AddHttpClient<ISchedulerService, SchedulerService>((serviceProv
             retryCount,
             attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)));
 });
+// Mailtrap configuration
+builder.Services.AddScoped<IEmailService, MailtrapEmailService>();
+builder.Services.AddHttpClient();
 builder.Services.ConfigureApplicationCookie(options =>
 {
     options.LoginPath = "/Account/Login";
@@ -89,6 +93,9 @@ app.Logger.LogInformation("Index.cshtml exists: {IndexExists}", File.Exists(Path
 // Seed roles
 using (var scope = app.Services.CreateScope())
 {
+    var dbContext = scope.ServiceProvider.GetRequiredService<EduLogContext>();
+    await dbContext.Database.MigrateAsync();
+
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     string[] roles = { "Admin", "Teacher" };
     foreach (var role in roles)

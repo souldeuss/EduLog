@@ -3,11 +3,19 @@
 @{
     ViewData["Title"] = "Класи";
     var teachers = ViewData["Teachers"] as List<EduLog.Models.Teacher> ?? new();
+    var templates = ViewData["Templates"] as List<EduLog.Models.ClassTemplate> ?? new();
+    var subjects = ViewData["Subjects"] as List<EduLog.Models.Subject> ?? new();
+    var error = TempData["Error"] as string;
 }
 
 <partial name="_AdminNav" />
 
 <h2 class="mb-4">Класи</h2>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
 
 <div class="mb-4">
     <a asp-action="CreateClass" class="btn btn-primary">
@@ -15,11 +23,23 @@
     </a>
 </div>
 
-<table class="table table-hover">
+<div class="mb-3 col-md-6">
+    <input id="classSearchInput" class="form-control" placeholder="Пошук за назвою класу або класним керівником" />
+</div>
+
+<table class="table table-hover" id="classesTable">
     <thead>
         <tr>
-            <th>Назва</th>
-            <th>Класний керівник</th>
+            <th>
+                <button type="button" class="btn btn-link p-0 text-decoration-none sort-header" data-sort-key="className">
+                    Назва <span class="sort-indicator">↕</span>
+                </button>
+            </th>
+            <th>
+                <button type="button" class="btn btn-link p-0 text-decoration-none sort-header" data-sort-key="teacherName">
+                    Класний керівник <span class="sort-indicator">↕</span>
+                </button>
+            </th>
             <th>Предметів</th>
             <th></th>
         </tr>
@@ -28,9 +48,13 @@
         @foreach (var cls in Model)
         {
             var teacher = teachers.FirstOrDefault(t => t.Id == cls.TeacherId);
-            <tr>
+            var teacherName = teacher != null ? $"{teacher.Surname} {teacher.Name}" : "";
+            <tr data-class-name="@cls.Name.ToLowerInvariant()"
+                data-class-sort-name="@cls.Name"
+                data-teacher-name="@teacherName.ToLowerInvariant()"
+                data-teacher-sort-name="@teacherName">
                 <td><strong>@cls.Name</strong></td>
-                <td>@(teacher != null ? $"{teacher.Surname} {teacher.Name}" : "—")</td>
+                <td>@(teacher != null ? teacherName : "—")</td>
                 <td>@(cls.ClassSubjects?.Count ?? 0)</td>
                 <td class="text-end">
                     <a asp-action="EditClass" asp-route-id="@cls.Id" class="btn btn-sm btn-outline-primary">
@@ -49,3 +73,228 @@
         }
     </tbody>
 </table>
+
+<div class="card mt-4">
+    <div class="card-body">
+        <h4 class="card-title mb-3">Шаблони предметів</h4>
+
+        <form asp-action="CreateTemplate" method="post" class="mb-4">
+            <div class="mb-3 col-md-6">
+                <label class="form-label">Назва шаблону</label>
+                <input name="name" class="form-control" required />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Предмети</label>
+                <div class="d-flex flex-wrap gap-3">
+                    @foreach (var subject in subjects)
+                    {
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="subjectIds" value="@subject.Id" id="subject-@subject.Id" />
+                            <label class="form-check-label" for="subject-@subject.Id">@subject.Name</label>
+                        </div>
+                    }
+                </div>
+            </div>
+            <button class="btn btn-primary"><i class="bi bi-plus-circle"></i> Створити шаблон</button>
+        </form>
+
+        @if (templates.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Шаблон</th>
+                            <th>Предмети</th>
+                            <th class="text-end"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var template in templates)
+                        {
+                            var templateSubjects = template.TemplateSubjects?.Select(ts => ts.Subject?.Name).Where(n => !string.IsNullOrWhiteSpace(n)).ToList() ?? new List<string>();
+                            <tr>
+                                <td><strong>@template.Name</strong></td>
+                                <td>@string.Join(", ", templateSubjects)</td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-success me-2 apply-template-btn"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#applyTemplateModal"
+                                            data-template-id="@template.Id"
+                                            data-template-name="@template.Name">
+                                        <i class="bi bi-box-arrow-in-down"></i> Apply to classes
+                                    </button>
+                                    <form asp-action="DeleteTemplate" method="post" class="d-inline"
+                                          onsubmit="return confirm('Видалити шаблон @template.Name?')">
+                                        <input type="hidden" name="id" value="@template.Id" />
+                                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <p class="text-muted mb-0">Шаблони ще не створені.</p>
+        }
+    </div>
+</div>
+
+<div class="modal fade" id="applyTemplateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-action="ApplyTemplate" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title">Застосувати шаблон</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="templateIdInput" name="templateId" />
+                    <p id="templateApplyTitle" class="fw-semibold"></p>
+                    <label class="form-label">Оберіть класи</label>
+                    <div class="d-flex flex-column gap-2">
+                        @foreach (var cls in Model)
+                        {
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="classIds" value="@cls.Id" id="apply-class-@cls.Id" />
+                                <label class="form-check-label" for="apply-class-@cls.Id">@cls.Name</label>
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-success">Застосувати</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    (() => {
+        const input = document.getElementById('classSearchInput');
+        const tableBody = document.querySelector('#classesTable tbody');
+        const rows = Array.from(document.querySelectorAll('#classesTable tbody tr'));
+        const sortButtons = Array.from(document.querySelectorAll('#classesTable .sort-header'));
+        const sortState = { key: null, direction: 1 };
+
+        function parseClassName(value) {
+            const text = (value || '').trim();
+            const match = text.match(/^(\d{1,2})\s*(.*)$/u);
+            if (!match) {
+                return { number: Number.MAX_SAFE_INTEGER, suffix: text.toLowerCase() };
+            }
+
+            return {
+                number: Number.parseInt(match[1], 10),
+                suffix: (match[2] || '').trim().toLowerCase()
+            };
+        }
+
+        function compareRows(a, b, key) {
+            if (key === 'className') {
+                const aName = a.dataset.classSortName || '';
+                const bName = b.dataset.classSortName || '';
+                const aParsed = parseClassName(aName);
+                const bParsed = parseClassName(bName);
+
+                if (aParsed.number !== bParsed.number) {
+                    return aParsed.number - bParsed.number;
+                }
+
+                return aParsed.suffix.localeCompare(bParsed.suffix, 'uk');
+            }
+
+            const aTeacher = (a.dataset.teacherSortName || '').trim();
+            const bTeacher = (b.dataset.teacherSortName || '').trim();
+            return aTeacher.localeCompare(bTeacher, 'uk');
+        }
+
+        function updateSortIndicators() {
+            sortButtons.forEach(button => {
+                const indicator = button.querySelector('.sort-indicator');
+                if (!indicator) {
+                    return;
+                }
+
+                if (button.dataset.sortKey !== sortState.key) {
+                    indicator.textContent = '↕';
+                } else {
+                    indicator.textContent = sortState.direction === 1 ? '↑' : '↓';
+                }
+            });
+        }
+
+        function sortRows(key) {
+            if (!tableBody) {
+                return;
+            }
+
+            if (sortState.key === key) {
+                sortState.direction *= -1;
+            } else {
+                sortState.key = key;
+                sortState.direction = 1;
+            }
+
+            rows
+                .sort((a, b) => compareRows(a, b, sortState.key) * sortState.direction)
+                .forEach(row => tableBody.appendChild(row));
+
+            updateSortIndicators();
+        }
+
+        function applyFilter() {
+            if (!input) {
+                return;
+            }
+
+            const query = input.value.trim().toLowerCase();
+            rows.forEach(row => {
+                const className = row.dataset.className || '';
+                const teacherName = row.dataset.teacherName || '';
+                const match = !query || className.includes(query) || teacherName.includes(query);
+                row.style.display = match ? '' : 'none';
+            });
+        }
+
+        if (input) {
+            input.addEventListener('input', applyFilter);
+        }
+
+        sortButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const key = button.dataset.sortKey;
+                if (key) {
+                    sortRows(key);
+                    applyFilter();
+                }
+            });
+        });
+
+        updateSortIndicators();
+        sortRows('className');
+
+        const templateIdInput = document.getElementById('templateIdInput');
+        const templateApplyTitle = document.getElementById('templateApplyTitle');
+        const applyButtons = document.querySelectorAll('.apply-template-btn');
+
+        applyButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const templateId = btn.getAttribute('data-template-id');
+                const templateName = btn.getAttribute('data-template-name');
+
+                if (templateIdInput) {
+                    templateIdInput.value = templateId || '';
+                }
+                if (templateApplyTitle) {
+                    templateApplyTitle.textContent = `Шаблон: ${templateName || ''}`;
+                }
+            });
+        });
+    })();
+</script>

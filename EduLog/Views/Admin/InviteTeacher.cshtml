@@ -3,7 +3,8 @@
 @{
     ViewData["Title"] = "Запросити вчителя";
     var invitations = ViewData["Invitations"] as List<EduLog.Models.Invitation> ?? new List<EduLog.Models.Invitation>();
-    var link = ViewData["InvitationLink"] as string;
+    var sentTo = TempData["InvitationSentTo"] as string;
+    var error = TempData["Error"] as string;
 }
 
 <div class="row justify-content-center">
@@ -11,6 +12,16 @@
         <partial name="_AdminNav" />
 
         <h2 class="mb-4">Запросити вчителя</h2>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(sentTo))
+        {
+            <div class="alert alert-success">Запрошення надіслано на @sentTo</div>
+        }
 
         <form asp-action="InviteTeacher" method="post" class="mb-4">
             <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
@@ -20,18 +31,6 @@
             </div>
             <span asp-validation-for="Email" class="text-danger"></span>
         </form>
-
-        @if (!string.IsNullOrEmpty(link))
-        {
-            <div class="alert alert-success">
-                <strong>Посилання для реєстрації:</strong><br />
-                <a href="@link">@link</a>
-                <button class="btn btn-sm btn-outline-secondary ms-2"
-                        onclick="navigator.clipboard.writeText('@link')">
-                    <i class="bi bi-clipboard"></i> Копіювати
-                </button>
-            </div>
-        }
 
         <h4 class="mt-4">Запрошення</h4>
         <table class="table">

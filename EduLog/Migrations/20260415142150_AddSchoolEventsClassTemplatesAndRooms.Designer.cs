@@ -4,6 +4,7 @@ using EduLog.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EduLog.Migrations
 {
     [DbContext(typeof(EduLogContext))]
-    partial class EduLogContextModelSnapshot : ModelSnapshot
+    [Migration("20260415142150_AddSchoolEventsClassTemplatesAndRooms")]
+    partial class AddSchoolEventsClassTemplatesAndRooms
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -454,15 +457,6 @@ namespace EduLog.Migrations
                     b.Property<int?>("ClassId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("DefaultRoomId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("HoursPerWeek")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsRoomFixed")
-                        .HasColumnType("bit");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -475,29 +469,9 @@ namespace EduLog.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DefaultRoomId");
-
                     b.HasIndex("TeacherId");
 
                     b.ToTable("Subject");
-                });
-
-            modelBuilder.Entity("EduLog.Models.SubjectTeacher", b =>
-                {
-                    b.Property<int>("SubjectId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("TeacherId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SchoolId")
-                        .HasColumnType("int");
-
-                    b.HasKey("SubjectId", "TeacherId");
-
-                    b.HasIndex("TeacherId");
-
-                    b.ToTable("SubjectTeacher");
                 });
 
             modelBuilder.Entity("EduLog.Models.Teacher", b =>
@@ -801,37 +775,11 @@ namespace EduLog.Migrations
 
             modelBuilder.Entity("EduLog.Models.Subject", b =>
                 {
-                    b.HasOne("EduLog.Models.Room", "DefaultRoom")
-                        .WithMany("ProfileSubjects")
-                        .HasForeignKey("DefaultRoomId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("EduLog.Models.Teacher", "Teacher")
                         .WithMany()
                         .HasForeignKey("TeacherId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("DefaultRoom");
-
-                    b.Navigation("Teacher");
-                });
-
-            modelBuilder.Entity("EduLog.Models.SubjectTeacher", b =>
-                {
-                    b.HasOne("EduLog.Models.Subject", "Subject")
-                        .WithMany("SubjectTeachers")
-                        .HasForeignKey("SubjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EduLog.Models.Teacher", "Teacher")
-                        .WithMany("SubjectTeachers")
-                        .HasForeignKey("TeacherId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Subject");
 
                     b.Navigation("Teacher");
                 });
@@ -919,8 +867,6 @@ namespace EduLog.Migrations
             modelBuilder.Entity("EduLog.Models.Room", b =>
                 {
                     b.Navigation("Classes");
-
-                    b.Navigation("ProfileSubjects");
                 });
 
             modelBuilder.Entity("EduLog.Models.Student", b =>
@@ -933,13 +879,6 @@ namespace EduLog.Migrations
             modelBuilder.Entity("EduLog.Models.Subject", b =>
                 {
                     b.Navigation("ClassSubjects");
-
-                    b.Navigation("SubjectTeachers");
-                });
-
-            modelBuilder.Entity("EduLog.Models.Teacher", b =>
-                {
-                    b.Navigation("SubjectTeachers");
                 });
 #pragma warning restore 612, 618
         }

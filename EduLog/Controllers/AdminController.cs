@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 
 namespace EduLog.Controllers
 {
@@ -16,6 +17,7 @@ namespace EduLog.Controllers
         private readonly EduLogContext _context;
         private readonly ITenantService _tenantService;
         private readonly ISchedulerService _schedulerService;
+        private readonly IEmailService _emailService;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<AdminController> _logger;
 
@@ -23,24 +25,79 @@ namespace EduLog.Controllers
             EduLogContext context,
             ITenantService tenantService,
             ISchedulerService schedulerService,
+            IEmailService emailService,
             UserManager<ApplicationUser> userManager,
             ILogger<AdminController> logger)
         {
             _context = context;
             _tenantService = tenantService;
             _schedulerService = schedulerService;
+            _emailService = emailService;
             _userManager = userManager;
             _logger = logger;
         }
 
         // ───────── Dashboard ─────────
-        public IActionResult Index()
+        public async Task<IActionResult> Index()
         {
-            ViewData["ClassCount"] = _context.Class.Count();
-            ViewData["TeacherCount"] = _context.Teacher.Count();
-            ViewData["StudentCount"] = _context.Student.Count();
-            ViewData["SubjectCount"] = _context.Subject.Count();
+            var now = DateTime.Today;
+            var monthStart = new DateTime(now.Year, now.Month, 1);
+            var monthEnd = monthStart.AddMonths(1);
+
+            ViewData["ClassCount"] = await _context.Class.CountAsync();
+            ViewData["TeacherCount"] = await _context.Teacher.CountAsync();
+            ViewData["StudentCount"] = await _context.Student.CountAsync();
+            ViewData["SubjectCount"] = await _context.Subject.CountAsync();
+            ViewData["Events"] = await _context.SchoolEvent
+                .Where(e => e.Date >= monthStart && e.Date < monthEnd)
+                .OrderBy(e => e.Date)
+                .ThenBy(e => e.Title)
+                .ToListAsync();
+            ViewData["CurrentMonth"] = monthStart;
+
             return View();
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> CreateEvent(string title, DateTime date, string? color)
+        {
+            if (_tenantService.SchoolId == null)
+                return BadRequest(new { success = false, message = "School is not selected." });
+
+            if (string.IsNullOrWhiteSpace(title))
+                return BadRequest(new { success = false, message = "Назва події обов'язкова." });
+
+            var schoolEvent = new SchoolEvent
+            {
+                Title = title.Trim(),
+                Date = date.Date,
+                Color = NormalizeHexColor(color)
+            };
+
+            _context.SchoolEvent.Add(schoolEvent);
+            await _context.SaveChangesAsync();
+
+            return Json(new
+            {
+                success = true,
+                id = schoolEvent.Id,
+                title = schoolEvent.Title,
+                date = schoolEvent.Date.ToString("yyyy-MM-dd"),
+                color = schoolEvent.Color
+            });
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> DeleteEvent(int id)
+        {
+            var schoolEvent = await _context.SchoolEvent.FirstOrDefaultAsync(e => e.Id == id);
+            if (schoolEvent == null)
+                return NotFound(new { success = false, message = "Подію не знайдено." });
+
+            _context.SchoolEvent.Remove(schoolEvent);
+            await _context.SaveChangesAsync();
+
+            return Json(new { success = true, id });
         }
 
         // ───────── Classes ─────────
@@ -48,7 +105,14 @@ namespace EduLog.Controllers
         {
             var classes = _context.Class.Include(c => c.ClassSubjects).ToList();
             var teachers = _context.Teacher.ToList();
+            var templates = _context.ClassTemplate
+                .Include(t => t.TemplateSubjects)
+                .ThenInclude(ts => ts.Subject)
+                .OrderBy(t => t.Name)
+                .ToList();
             ViewData["Teachers"] = teachers;
+            ViewData["Templates"] = templates;
+            ViewData["Subjects"] = _context.Subject.OrderBy(s => s.Name).ToList();
             return View(classes);
         }
 
@@ -78,26 +142,152 @@ namespace EduLog.Controllers
         public IActionResult EditClass(int id)
         {
             var cls = _context.Class
+                .Include(c => c.Room)
                 .Include(c => c.ClassSubjects).ThenInclude(cs => cs.Subject)
                 .FirstOrDefault(c => c.Id == id);
             if (cls == null) return NotFound();
 
             ViewData["Teachers"] = new SelectList(_context.Teacher.ToList(), "Id", "Surname", cls.TeacherId);
+            ViewData["Rooms"] = new SelectList(_context.Room.OrderBy(r => r.Number).ToList(), "Id", "Number", cls.RoomId);
             ViewData["AllSubjects"] = _context.Subject.ToList();
             return View(cls);
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> UpdateClass(int id, string name, int? teacherId)
+        public async Task<IActionResult> UpdateClass(int id, string name, int? teacherId, int? roomId)
         {
             var cls = await _context.Class.FindAsync(id);
             if (cls == null) return NotFound();
 
             cls.Name = name?.Trim() ?? cls.Name;
             cls.TeacherId = teacherId;
+            cls.RoomId = roomId;
             await _context.SaveChangesAsync();
             return RedirectToAction(nameof(EditClass), new { id });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> CreateTemplate(string name, int[] subjectIds)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                TempData["Error"] = "Введіть назву шаблону";
+                return RedirectToAction(nameof(Classes));
+            }
+
+            if (subjectIds == null || subjectIds.Length == 0)
+            {
+                TempData["Error"] = "Оберіть хоча б один предмет";
+                return RedirectToAction(nameof(Classes));
+            }
+
+            var validSubjectIds = await _context.Subject
+                .Where(s => subjectIds.Contains(s.Id))
+                .Select(s => s.Id)
+                .Distinct()
+                .ToArrayAsync();
+
+            if (validSubjectIds.Length == 0)
+            {
+                TempData["Error"] = "Оберіть коректні предмети";
+                return RedirectToAction(nameof(Classes));
+            }
+
+            var template = new ClassTemplate
+            {
+                Name = name.Trim()
+            };
+
+            _context.ClassTemplate.Add(template);
+            await _context.SaveChangesAsync();
+
+            foreach (var subjectId in validSubjectIds)
+            {
+                _context.TemplateSubject.Add(new TemplateSubject
+                {
+                    TemplateId = template.Id,
+                    SubjectId = subjectId
+                });
+            }
+
+            await _context.SaveChangesAsync();
+            return RedirectToAction(nameof(Classes));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteTemplate(int id)
+        {
+            var template = await _context.ClassTemplate.FindAsync(id);
+            if (template == null) return NotFound();
+
+            _context.ClassTemplate.Remove(template);
+            await _context.SaveChangesAsync();
+            return RedirectToAction(nameof(Classes));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ApplyTemplate(int templateId, int[] classIds)
+        {
+            var template = await _context.ClassTemplate
+                .Include(t => t.TemplateSubjects)
+                .FirstOrDefaultAsync(t => t.Id == templateId);
+
+            if (template == null)
+                return NotFound();
+
+            if (classIds == null || classIds.Length == 0)
+            {
+                TempData["Error"] = "Оберіть хоча б один клас";
+                return RedirectToAction(nameof(Classes));
+            }
+
+            var subjectIds = template.TemplateSubjects.Select(ts => ts.SubjectId).Distinct().ToArray();
+            if (subjectIds.Length == 0)
+                return RedirectToAction(nameof(Classes));
+
+            var classIdSet = await _context.Class
+                .Where(c => classIds.Contains(c.Id))
+                .Select(c => c.Id)
+                .Distinct()
+                .ToArrayAsync();
+
+            if (classIdSet.Length == 0)
+            {
+                TempData["Error"] = "Оберіть хоча б один клас";
+                return RedirectToAction(nameof(Classes));
+            }
+
+            var existing = await _context.ClassSubject
+                .Where(cs => classIdSet.Contains(cs.ClassId) && subjectIds.Contains(cs.SubjectId))
+                .Select(cs => new { cs.ClassId, cs.SubjectId })
+                .ToListAsync();
+
+            var existingPairs = existing
+                .Select(x => $"{x.ClassId}:{x.SubjectId}")
+                .ToHashSet();
+
+            foreach (var classId in classIdSet)
+            {
+                foreach (var subjectId in subjectIds)
+                {
+                    var key = $"{classId}:{subjectId}";
+                    if (existingPairs.Contains(key))
+                        continue;
+
+                    _context.ClassSubject.Add(new ClassSubject
+                    {
+                        ClassId = classId,
+                        SubjectId = subjectId
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return RedirectToAction(nameof(Classes));
         }
 
         [HttpPost]
@@ -200,12 +390,216 @@ namespace EduLog.Controllers
         // ───────── Teachers ─────────
         public async Task<IActionResult> Teachers()
         {
-            var teachers = await _context.Teacher.ToListAsync();
+            var teachers = await _context.Teacher
+                .OrderBy(t => t.Surname)
+                .ThenBy(t => t.Name)
+                .ToListAsync();
             var users = await _userManager.Users
                 .Where(u => u.SchoolId == _tenantService.SchoolId)
                 .ToListAsync();
+            var subjects = await _context.Subject
+                .OrderBy(s => s.Name)
+                .ToListAsync();
+
             ViewData["Users"] = users;
+            ViewData["AllSubjects"] = subjects;
             return View(teachers);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> TeacherDetails(int id)
+        {
+            var teacher = await _context.Teacher.FirstOrDefaultAsync(t => t.Id == id);
+            if (teacher == null)
+                return NotFound();
+
+            var user = await _userManager.Users
+                .Where(u => u.SchoolId == _tenantService.SchoolId && u.TeacherId == id)
+                .FirstOrDefaultAsync();
+
+            var subjects = await _context.Subject
+                .Where(s => s.SubjectTeachers.Any(st => st.TeacherId == id))
+                .OrderBy(s => s.Name)
+                .Select(s => new { id = s.Id, name = s.Name })
+                .ToListAsync();
+
+            var classes = await _context.ScheduleSlot
+                .Where(s => s.TeacherId == id)
+                .Select(s => new { id = s.ClassId, name = s.Class.Name })
+                .Distinct()
+                .OrderBy(c => c.name)
+                .ToListAsync();
+
+            return Json(new
+            {
+                name = teacher.Name,
+                surname = teacher.Surname,
+                patronymic = teacher.Patronymic,
+                email = user?.Email,
+                phone = user?.PhoneNumber,
+                subjects,
+                classes
+            });
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> EditTeacher(int id, string name, string surname, string? patronymic, string? phone)
+        {
+            var isAjax = string.Equals(
+                Request.Headers["X-Requested-With"],
+                "XMLHttpRequest",
+                StringComparison.OrdinalIgnoreCase);
+
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(surname))
+            {
+                if (isAjax)
+                    return BadRequest(new { success = false, message = "Ім'я та прізвище обов'язкові." });
+
+                TempData["Error"] = "Ім'я та прізвище обов'язкові.";
+                return RedirectToAction(nameof(Teachers));
+            }
+
+            var teacher = await _context.Teacher.FindAsync(id);
+            if (teacher == null)
+            {
+                if (isAjax)
+                    return NotFound(new { success = false, message = "Вчителя не знайдено." });
+
+                return NotFound();
+            }
+
+            teacher.Name = name.Trim();
+            teacher.Surname = surname.Trim();
+            teacher.Patronymic = patronymic?.Trim() ?? string.Empty;
+
+            var normalizedPhone = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim();
+            var user = await _userManager.Users
+                .Where(u => u.SchoolId == _tenantService.SchoolId && u.TeacherId == id)
+                .FirstOrDefaultAsync();
+
+            await _context.SaveChangesAsync();
+
+            if (user != null && user.PhoneNumber != normalizedPhone)
+            {
+                user.PhoneNumber = normalizedPhone;
+                await _userManager.UpdateAsync(user);
+            }
+
+            if (isAjax)
+            {
+                return Json(new
+                {
+                    success = true,
+                    id = teacher.Id,
+                    name = teacher.Name,
+                    surname = teacher.Surname,
+                    patronymic = teacher.Patronymic,
+                    email = user?.Email,
+                    phone = user?.PhoneNumber
+                });
+            }
+
+            return RedirectToAction(nameof(Teachers));
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> AssignSubjectToTeacher(int teacherId, int subjectId)
+        {
+            var teacherExists = await _context.Teacher.AnyAsync(t => t.Id == teacherId);
+            if (!teacherExists)
+                return NotFound(new { success = false, message = "Вчителя не знайдено." });
+
+            var subject = await _context.Subject.FindAsync(subjectId);
+            if (subject == null)
+                return NotFound(new { success = false, message = "Предмет не знайдено." });
+
+            var exists = await _context.SubjectTeacher
+                .AnyAsync(st => st.SubjectId == subjectId && st.TeacherId == teacherId);
+            if (!exists)
+            {
+                _context.SubjectTeacher.Add(new SubjectTeacher
+                {
+                    SubjectId = subjectId,
+                    TeacherId = teacherId
+                });
+            }
+
+            subject.TeacherId = teacherId;
+            await _context.SaveChangesAsync();
+
+            return Json(new { success = true, subjectId = subject.Id, subjectName = subject.Name });
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> UnassignSubjectFromTeacher(int teacherId, int subjectId)
+        {
+            var assignment = await _context.SubjectTeacher
+                .FirstOrDefaultAsync(st => st.SubjectId == subjectId && st.TeacherId == teacherId);
+            if (assignment == null)
+                return NotFound(new { success = false, message = "Предмет не знайдено у цього вчителя." });
+
+            var assignmentCount = await _context.SubjectTeacher
+                .CountAsync(st => st.SubjectId == subjectId);
+            if (assignmentCount <= 1)
+                return BadRequest(new { success = false, message = "У предмета має залишитись хоча б один вчитель." });
+
+            _context.SubjectTeacher.Remove(assignment);
+            var subject = await _context.Subject.FindAsync(subjectId);
+            if (subject != null && subject.TeacherId == teacherId)
+            {
+                var replacementTeacherId = await _context.SubjectTeacher
+                    .Where(st => st.SubjectId == subjectId && st.TeacherId != teacherId)
+                    .Select(st => st.TeacherId)
+                    .FirstOrDefaultAsync();
+
+                if (replacementTeacherId != 0)
+                {
+                    subject.TeacherId = replacementTeacherId;
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Json(new { success = true });
+        }
+
+        // ───────── Rooms ─────────
+        public IActionResult Rooms()
+        {
+            var rooms = _context.Room.OrderBy(r => r.Number).ToList();
+            return View(rooms);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> CreateRoom(string number, int? capacity)
+        {
+            if (string.IsNullOrWhiteSpace(number))
+            {
+                TempData["Error"] = "Введіть номер кабінету";
+                return RedirectToAction(nameof(Rooms));
+            }
+
+            _context.Room.Add(new Room
+            {
+                Number = number.Trim(),
+                Capacity = capacity
+            });
+
+            await _context.SaveChangesAsync();
+            return RedirectToAction(nameof(Rooms));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteRoom(int id)
+        {
+            var room = await _context.Room.FindAsync(id);
+            if (room == null) return NotFound();
+
+            _context.Room.Remove(room);
+            await _context.SaveChangesAsync();
+            return RedirectToAction(nameof(Rooms));
         }
 
         // ───────── Subjects ─────────
@@ -213,16 +607,20 @@ namespace EduLog.Controllers
         {
             var subjects = _context.Subject
                 .Include(s => s.Teacher)
+                .Include(s => s.DefaultRoom)
+                .Include(s => s.SubjectTeachers)
+                    .ThenInclude(st => st.Teacher)
                 .Include(s => s.ClassSubjects).ThenInclude(cs => cs.Class)
                 .ToList();
             ViewData["Teachers"] = _context.Teacher.ToList();
             ViewData["Classes"] = _context.Class.OrderBy(c => c.Name).ToList();
+            ViewData["Rooms"] = _context.Room.OrderBy(r => r.Number).ToList();
             return View(subjects);
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> CreateSubject(string name, int teacherId, int[] classIds)
+        public async Task<IActionResult> CreateSubject(string name, int teacherId, int[] classIds, int hoursPerWeek = 1, int? defaultRoomId = null, bool isRoomFixed = false)
         {
             if (string.IsNullOrWhiteSpace(name))
             {
@@ -230,8 +628,23 @@ namespace EduLog.Controllers
                 return RedirectToAction(nameof(Subjects));
             }
 
-            var subject = new Subject { Name = name.Trim(), TeacherId = teacherId };
+            var normalizedHours = Math.Max(1, hoursPerWeek);
+            var subject = new Subject
+            {
+                Name = name.Trim(),
+                TeacherId = teacherId,
+                HoursPerWeek = normalizedHours,
+                DefaultRoomId = defaultRoomId,
+                IsRoomFixed = isRoomFixed && defaultRoomId.HasValue
+            };
             _context.Subject.Add(subject);
+            await _context.SaveChangesAsync();
+
+            _context.SubjectTeacher.Add(new SubjectTeacher
+            {
+                SubjectId = subject.Id,
+                TeacherId = teacherId
+            });
             await _context.SaveChangesAsync();
 
             if (classIds != null)
@@ -290,14 +703,146 @@ namespace EduLog.Controllers
         [HttpPost]
         public async Task<IActionResult> ChangeSubjectTeacher([FromBody] ChangeTeacherRequest request)
         {
-            var subject = await _context.Subject.FindAsync(request.SubjectId);
+            var subject = await _context.Subject
+                .Include(s => s.SubjectTeachers)
+                .ThenInclude(st => st.Teacher)
+                .FirstOrDefaultAsync(s => s.Id == request.SubjectId);
             if (subject == null) return NotFound();
+
+            var existing = subject.SubjectTeachers.ToList();
+            if (existing.Any())
+            {
+                _context.SubjectTeacher.RemoveRange(existing);
+            }
+
+            _context.SubjectTeacher.Add(new SubjectTeacher
+            {
+                SubjectId = subject.Id,
+                TeacherId = request.TeacherId
+            });
 
             subject.TeacherId = request.TeacherId;
             await _context.SaveChangesAsync();
 
             var teacher = await _context.Teacher.FindAsync(request.TeacherId);
             return Json(new { success = true, teacherName = $"{teacher?.Surname} {teacher?.Name}" });
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> UpdateSubject(int id, string? name, int? hoursPerWeek, int? defaultRoomId, bool? isRoomFixed)
+        {
+            var subject = await _context.Subject.FindAsync(id);
+            if (subject == null)
+                return NotFound(new { success = false, message = "Предмет не знайдено." });
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                subject.Name = name.Trim();
+            }
+
+            if (hoursPerWeek.HasValue)
+            {
+                subject.HoursPerWeek = Math.Max(1, hoursPerWeek.Value);
+            }
+
+            subject.DefaultRoomId = defaultRoomId;
+            if (isRoomFixed.HasValue)
+            {
+                subject.IsRoomFixed = isRoomFixed.Value;
+            }
+
+            if (!subject.DefaultRoomId.HasValue)
+            {
+                subject.IsRoomFixed = false;
+            }
+
+            await _context.SaveChangesAsync();
+
+            var roomNumber = subject.DefaultRoomId.HasValue
+                ? await _context.Room.Where(r => r.Id == subject.DefaultRoomId.Value).Select(r => r.Number).FirstOrDefaultAsync()
+                : null;
+
+            return Json(new
+            {
+                success = true,
+                id = subject.Id,
+                name = subject.Name,
+                hoursPerWeek = subject.HoursPerWeek,
+                defaultRoomId = subject.DefaultRoomId,
+                defaultRoomNumber = roomNumber,
+                isRoomFixed = subject.IsRoomFixed
+            });
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> AddTeacherToSubject([FromBody] SubjectTeacherRequest request)
+        {
+            var subject = await _context.Subject
+                .Include(s => s.SubjectTeachers)
+                .ThenInclude(st => st.Teacher)
+                .FirstOrDefaultAsync(s => s.Id == request.SubjectId);
+            if (subject == null)
+                return NotFound(new { success = false, message = "Предмет не знайдено." });
+
+            var teacher = await _context.Teacher.FindAsync(request.TeacherId);
+            if (teacher == null)
+                return NotFound(new { success = false, message = "Вчителя не знайдено." });
+
+            var exists = subject.SubjectTeachers.Any(st => st.TeacherId == request.TeacherId);
+            if (!exists)
+            {
+                _context.SubjectTeacher.Add(new SubjectTeacher
+                {
+                    SubjectId = request.SubjectId,
+                    TeacherId = request.TeacherId
+                });
+
+                if (subject.TeacherId == 0)
+                {
+                    subject.TeacherId = request.TeacherId;
+                }
+
+                await _context.SaveChangesAsync();
+            }
+
+            return Json(new
+            {
+                success = true,
+                teacherId = teacher.Id,
+                teacherName = $"{teacher.Surname} {teacher.Name}".Trim()
+            });
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> RemoveTeacherFromSubject([FromBody] SubjectTeacherRequest request)
+        {
+            var assignment = await _context.SubjectTeacher
+                .FirstOrDefaultAsync(st => st.SubjectId == request.SubjectId && st.TeacherId == request.TeacherId);
+            if (assignment == null)
+                return NotFound(new { success = false, message = "Прив'язку не знайдено." });
+
+            var count = await _context.SubjectTeacher.CountAsync(st => st.SubjectId == request.SubjectId);
+            if (count <= 1)
+                return BadRequest(new { success = false, message = "У предмета має залишитись хоча б один вчитель." });
+
+            _context.SubjectTeacher.Remove(assignment);
+
+            var subject = await _context.Subject.FindAsync(request.SubjectId);
+            if (subject != null && subject.TeacherId == request.TeacherId)
+            {
+                var replacementTeacherId = await _context.SubjectTeacher
+                    .Where(st => st.SubjectId == request.SubjectId && st.TeacherId != request.TeacherId)
+                    .Select(st => st.TeacherId)
+                    .FirstOrDefaultAsync();
+
+                if (replacementTeacherId != 0)
+                {
+                    subject.TeacherId = replacementTeacherId;
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return Json(new { success = true });
         }
 
         [HttpPost]
@@ -311,7 +856,15 @@ namespace EduLog.Controllers
             {
                 if (!string.IsNullOrWhiteSpace(item.Name) && item.TeacherId > 0)
                 {
-                    _context.Subject.Add(new Subject { Name = item.Name.Trim(), TeacherId = item.TeacherId });
+                    var subject = new Subject { Name = item.Name.Trim(), TeacherId = item.TeacherId };
+                    _context.Subject.Add(subject);
+                    await _context.SaveChangesAsync();
+
+                    _context.SubjectTeacher.Add(new SubjectTeacher
+                    {
+                        SubjectId = subject.Id,
+                        TeacherId = item.TeacherId
+                    });
                     created++;
                 }
             }
@@ -391,6 +944,12 @@ namespace EduLog.Controllers
                 var subject = new Subject { Name = row.Name.Trim(), TeacherId = teacher.Id };
                 _context.Subject.Add(subject);
                 await _context.SaveChangesAsync();
+
+                _context.SubjectTeacher.Add(new SubjectTeacher
+                {
+                    SubjectId = subject.Id,
+                    TeacherId = teacher.Id
+                });
 
                 if (!string.IsNullOrWhiteSpace(row.ClassName))
                 {
@@ -599,6 +1158,25 @@ namespace EduLog.Controllers
                 "XMLHttpRequest",
                 StringComparison.OrdinalIgnoreCase);
 
+            var subjectRoomMeta = await _context.Subject
+                .Where(s => s.Id == subjectId)
+                .Select(s => new
+                {
+                    s.IsRoomFixed,
+                    DefaultRoomNumber = s.DefaultRoom != null ? s.DefaultRoom.Number : null
+                })
+                .FirstOrDefaultAsync();
+
+            var normalizedRoom = room?.Trim();
+            if (subjectRoomMeta?.IsRoomFixed == true && !string.IsNullOrWhiteSpace(subjectRoomMeta.DefaultRoomNumber))
+            {
+                normalizedRoom = subjectRoomMeta.DefaultRoomNumber;
+            }
+            else if (string.IsNullOrWhiteSpace(normalizedRoom))
+            {
+                normalizedRoom = subjectRoomMeta?.DefaultRoomNumber;
+            }
+
             // Check conflicts before saving
             var existingSlots = await _context.ScheduleSlot
                 .Where(s => s.AcademicYearId == yearId && s.DayOfWeek == dayOfWeek && s.LessonNumber == lessonNumber)
@@ -610,8 +1188,8 @@ namespace EduLog.Controllers
             if (existingSlots.Any(s => s.TeacherId == teacherId))
                 conflictMessages.Add("Цей вчитель вже має урок у цей час");
 
-            if (!string.IsNullOrWhiteSpace(room) && existingSlots.Any(s => s.Room == room.Trim()))
-                conflictMessages.Add($"Кабінет \"{room.Trim()}\" вже зайнятий у цей час");
+            if (!string.IsNullOrWhiteSpace(normalizedRoom) && existingSlots.Any(s => s.Room == normalizedRoom))
+                conflictMessages.Add($"Кабінет \"{normalizedRoom}\" вже зайнятий у цей час");
 
             if (existingSlots.Any(s => s.ClassId == classId))
                 conflictMessages.Add("Цей клас вже має урок у цей час");
@@ -652,7 +1230,7 @@ namespace EduLog.Controllers
                 slot.LessonNumber = lessonNumber;
                 slot.SubjectId = subjectId;
                 slot.TeacherId = teacherId;
-                slot.Room = room?.Trim();
+                slot.Room = normalizedRoom;
                 savedSlot = slot;
             }
             else
@@ -665,7 +1243,7 @@ namespace EduLog.Controllers
                     LessonNumber = lessonNumber,
                     SubjectId = subjectId,
                     TeacherId = teacherId,
-                    Room = room?.Trim()
+                    Room = normalizedRoom
                 };
 
                 _context.ScheduleSlot.Add(savedSlot);
@@ -763,6 +1341,11 @@ namespace EduLog.Controllers
                 .Where(slot => slot.AcademicYearId == yearId && slot.SchoolId == schoolId.Value)
                 .ToList();
 
+            var fixedRooms = await _context.Subject
+                .Where(s => s.SchoolId == schoolId.Value && s.IsRoomFixed && s.DefaultRoomId != null)
+                .Select(s => new { s.Id, RoomNumber = s.DefaultRoom!.Number })
+                .ToDictionaryAsync(s => s.Id, s => s.RoomNumber, cancellationToken);
+
             if (!mergeExisting)
             {
                 var existingSlots = await _context.ScheduleSlot
@@ -773,6 +1356,8 @@ namespace EduLog.Controllers
 
             foreach (var slot in slots)
             {
+                var fixedRoom = fixedRooms.TryGetValue(slot.SubjectId, out var configuredRoom) ? configuredRoom : null;
+
                 var existingSlot = mergeExisting
                     ? await _context.ScheduleSlot.FirstOrDefaultAsync(
                         item => item.SchoolId == schoolId.Value &&
@@ -787,7 +1372,7 @@ namespace EduLog.Controllers
                 {
                     existingSlot.SubjectId = slot.SubjectId;
                     existingSlot.TeacherId = slot.TeacherId;
-                    existingSlot.Room = slot.Room;
+                    existingSlot.Room = fixedRoom ?? slot.Room;
                     continue;
                 }
 
@@ -800,7 +1385,7 @@ namespace EduLog.Controllers
                     TeacherId = slot.TeacherId,
                     DayOfWeek = slot.DayOfWeek,
                     LessonNumber = slot.LessonNumber,
-                    Room = slot.Room
+                    Room = fixedRoom ?? slot.Room
                 });
             }
 
@@ -838,7 +1423,7 @@ namespace EduLog.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> InviteTeacher(InviteTeacherViewModel model)
+        public async Task<IActionResult> InviteTeacher(InviteTeacherViewModel model, CancellationToken cancellationToken)
         {
             if (!ModelState.IsValid)
             {
@@ -858,10 +1443,26 @@ namespace EduLog.Controllers
             };
 
             _context.Invitation.Add(invitation);
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(cancellationToken);
 
             var link = Url.Action("RegisterTeacher", "Account", new { token }, Request.Scheme);
-            ViewData["InvitationLink"] = link;
+            if (string.IsNullOrWhiteSpace(link))
+            {
+                TempData["Error"] = "Не вдалося сформувати посилання для запрошення.";
+                ViewData["Invitations"] = _context.Invitation.ToList();
+                return View(new InviteTeacherViewModel());
+            }
+
+            try
+            {
+                await _emailService.SendInvitationAsync(model.Email, link, cancellationToken);
+                TempData["InvitationSentTo"] = model.Email;
+            }
+            catch (ApplicationException ex)
+            {
+                TempData["Error"] = ex.Message;
+            }
+
             ViewData["Invitations"] = _context.Invitation.ToList();
 
             return View(new InviteTeacherViewModel());
@@ -915,6 +1516,22 @@ namespace EduLog.Controllers
             }
 
             return conflicts;
+        }
+
+        private static string? NormalizeHexColor(string? color)
+        {
+            if (string.IsNullOrWhiteSpace(color))
+                return null;
+
+            var normalized = color.Trim();
+            if (!normalized.StartsWith('#'))
+            {
+                normalized = $"#{normalized}";
+            }
+
+            return Regex.IsMatch(normalized, "^#[0-9A-Fa-f]{6}$")
+                ? normalized
+                : null;
         }
     }
 }

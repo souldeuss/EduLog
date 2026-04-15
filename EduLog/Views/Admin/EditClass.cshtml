@@ -23,6 +23,12 @@
             <option value="">— не вказано —</option>
         </select>
     </div>
+    <div class="mb-3">
+        <label class="form-label">Домашній клас (кабінет)</label>
+        <select name="roomId" class="form-select" asp-items="@(ViewData["Rooms"] as SelectList)">
+            <option value="">— не вказано —</option>
+        </select>
+    </div>
     <button type="submit" class="btn btn-primary">Зберегти</button>
     <a asp-action="Classes" class="btn btn-secondary">Назад</a>
 </form>

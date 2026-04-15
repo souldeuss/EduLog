@@ -1,0 +1,55 @@
+@model List<EduLog.Models.Room>
+
+@{
+    ViewData["Title"] = "Кабінети";
+    var error = TempData["Error"] as string;
+}
+
+<partial name="_AdminNav" />
+
+<h2 class="mb-4">Кабінети</h2>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<form asp-action="CreateRoom" method="post" class="row g-2 align-items-end mb-4">
+    <div class="col-md-4">
+        <label class="form-label">Номер кабінету</label>
+        <input name="number" class="form-control" required />
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Місткість</label>
+        <input name="capacity" type="number" min="1" class="form-control" />
+    </div>
+    <div class="col-md-3">
+        <button class="btn btn-primary"><i class="bi bi-plus-circle"></i> Додати</button>
+    </div>
+</form>
+
+<table class="table table-hover">
+    <thead>
+        <tr>
+            <th>Номер</th>
+            <th>Місткість</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var room in Model)
+        {
+            <tr>
+                <td><strong>@room.Number</strong></td>
+                <td>@(room.Capacity?.ToString() ?? "—")</td>
+                <td class="text-end">
+                    <form asp-action="DeleteRoom" method="post" class="d-inline"
+                          onsubmit="return confirm('Видалити кабінет @room.Number?')">
+                        <input type="hidden" name="id" value="@room.Id" />
+                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>

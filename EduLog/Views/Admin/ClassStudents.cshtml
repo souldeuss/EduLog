@@ -18,7 +18,11 @@
     <div class="alert alert-danger">@error</div>
 }
 
-<table class="table table-hover">
+<div class="mb-3 col-md-6">
+    <input id="studentSearchInput" class="form-control" placeholder="Пошук за прізвищем або ім'ям" />
+</div>
+
+<table class="table table-hover" id="studentsTable">
     <thead>
         <tr>
             <th>#</th>
@@ -32,7 +36,8 @@
         @{ int idx = 1; }
         @foreach (var s in Model)
         {
-            <tr>
+            var searchName = $"{s.Surname} {s.Name}".ToLowerInvariant();
+            <tr data-student-row="@s.Id" data-search-name="@searchName">
                 <td>@(idx++)</td>
                 <td>@s.Surname</td>
                 <td>@s.Name</td>
@@ -49,7 +54,7 @@
                     </form>
                 </td>
             </tr>
-            <tr class="collapse" id="edit-@s.Id">
+            <tr class="collapse" id="edit-@s.Id" data-student-detail="@s.Id">
                 <td colspan="5">
                     <form asp-action="EditStudent" method="post" class="d-flex gap-2 align-items-end">
                         <input type="hidden" name="id" value="@s.Id" />
@@ -69,6 +74,34 @@
                             <button class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> Зберегти</button>
                         </div>
                     </form>
+
+<script>
+    (() => {
+        const input = document.getElementById('studentSearchInput');
+        const rows = Array.from(document.querySelectorAll('#studentsTable tbody tr[data-student-row]'));
+
+        if (!input) {
+            return;
+        }
+
+        input.addEventListener('input', () => {
+            const query = input.value.trim().toLowerCase();
+
+            rows.forEach(row => {
+                const match = !query || (row.dataset.searchName || '').includes(query);
+                const studentId = row.getAttribute('data-student-row');
+                const detailsRow = studentId
+                    ? document.querySelector(`#studentsTable tbody tr[data-student-detail='${studentId}']`)
+                    : null;
+
+                row.style.display = match ? '' : 'none';
+                if (detailsRow) {
+                    detailsRow.style.display = match ? '' : 'none';
+                }
+            });
+        });
+    })();
+</script>
                 </td>
             </tr>
         }

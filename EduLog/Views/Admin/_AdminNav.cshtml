@@ -1,40 +1,64 @@
 @{
-    var current = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
+    var currentAction = ViewContext.RouteData.Values["action"]?.ToString() ?? string.Empty;
+    var currentController = ViewContext.RouteData.Values["controller"]?.ToString() ?? string.Empty;
+
+    bool IsActive(params string[] actions)
+    {
+        if (!string.Equals(currentController, "Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        foreach (var action in actions)
+        {
+            if (string.Equals(action, currentAction, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 <ul class="nav nav-tabs mb-4">
     <li class="nav-item">
-        <a class="nav-link @(current == "Index" ? "active" : "")" asp-action="Index">
+        <a class="nav-link @(IsActive("Index") ? "active" : "")" asp-controller="Admin" asp-action="Index">
             <i class="bi bi-speedometer2"></i> Панель
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link @(current is "Classes" or "EditClass" or "ClassStudents" ? "active" : "")" asp-action="Classes">
+        <a class="nav-link @(IsActive("Classes", "CreateClass", "EditClass", "ClassStudents") ? "active" : "")" asp-controller="Admin" asp-action="Classes">
             <i class="bi bi-collection"></i> Класи
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link @(current == "Teachers" ? "active" : "")" asp-action="Teachers">
+        <a class="nav-link @(IsActive("Teachers") ? "active" : "")" asp-controller="Admin" asp-action="Teachers">
             <i class="bi bi-people"></i> Вчителі
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link @(current == "Subjects" ? "active" : "")" asp-action="Subjects">
+        <a class="nav-link @(IsActive("Subjects") ? "active" : "")" asp-controller="Admin" asp-action="Subjects">
             <i class="bi bi-book"></i> Предмети
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link @(current == "AcademicYears" ? "active" : "")" asp-action="AcademicYears">
+        <a class="nav-link @(IsActive("AcademicYears") ? "active" : "")" asp-controller="Admin" asp-action="AcademicYears">
             <i class="bi bi-calendar-range"></i> Навч. роки
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link @(current == "Schedule" ? "active" : "")" asp-action="Schedule">
+        <a class="nav-link @(IsActive("Schedule") ? "active" : "")" asp-controller="Admin" asp-action="Schedule">
             <i class="bi bi-table"></i> Розклад
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link @(current == "InviteTeacher" ? "active" : "")" asp-action="InviteTeacher">
+        <a class="nav-link @(IsActive("Rooms") ? "active" : "")" asp-controller="Admin" asp-action="Rooms">
+            <i class="bi bi-door-open"></i> Кабінети
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(IsActive("InviteTeacher") ? "active" : "")" asp-controller="Admin" asp-action="InviteTeacher">
             <i class="bi bi-person-plus"></i> Запрошення
         </a>
     </li>

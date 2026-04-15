@@ -1,10 +1,118 @@
+@using System.Text.Json
 @{
     ViewData["Title"] = "Адмін-панель";
     int classCount = (int)(ViewData["ClassCount"] ?? 0);
     int teacherCount = (int)(ViewData["TeacherCount"] ?? 0);
     int studentCount = (int)(ViewData["StudentCount"] ?? 0);
     int subjectCount = (int)(ViewData["SubjectCount"] ?? 0);
+    var events = ViewData["Events"] as List<EduLog.Models.SchoolEvent> ?? new List<EduLog.Models.SchoolEvent>();
+    var currentMonth = (DateTime)(ViewData["CurrentMonth"] ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1));
+
+    var monthStart = new DateTime(currentMonth.Year, currentMonth.Month, 1);
+    var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+    int monthStartOffset = ((int)monthStart.DayOfWeek + 6) % 7;
+    int monthEndOffset = 6 - (((int)monthEnd.DayOfWeek + 6) % 7);
+    var gridStart = monthStart.AddDays(-monthStartOffset);
+    var gridEnd = monthEnd.AddDays(monthEndOffset);
+    int totalDays = (gridEnd - gridStart).Days + 1;
+    var eventsByDate = events
+        .GroupBy(e => e.Date.Date)
+        .ToDictionary(g => g.Key, g => g.OrderBy(e => e.Title).ToList());
+
+    var eventsJson = JsonSerializer.Serialize(events.Select(e => new
+    {
+        id = e.Id,
+        title = e.Title,
+        date = e.Date.ToString("yyyy-MM-dd"),
+        color = e.Color
+    }));
 }
+
+<style>
+    .dashboard-card-link {
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+
+    .dashboard-card-link .card {
+        transition: transform .15s ease, box-shadow .15s ease;
+        cursor: pointer;
+    }
+
+    .dashboard-card-link:hover .card {
+        transform: translateY(-2px);
+        box-shadow: 0 .5rem 1rem rgba(0,0,0,.15);
+    }
+
+    .events-calendar {
+        border: 1px solid var(--bs-border-color);
+        border-radius: .75rem;
+        overflow: hidden;
+    }
+
+    .calendar-weekdays,
+    .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+
+    .calendar-weekdays > div {
+        background: var(--bs-light-bg-subtle);
+        border-bottom: 1px solid var(--bs-border-color);
+        text-align: center;
+        font-size: .8rem;
+        font-weight: 600;
+        padding: .45rem;
+    }
+
+    .calendar-day {
+        min-height: 92px;
+        border-right: 1px solid var(--bs-border-color);
+        border-bottom: 1px solid var(--bs-border-color);
+        padding: .35rem;
+        display: flex;
+        flex-direction: column;
+        gap: .25rem;
+    }
+
+    .calendar-day:nth-child(7n) {
+        border-right: none;
+    }
+
+    .calendar-day.other-month {
+        background: var(--bs-tertiary-bg);
+        color: var(--bs-secondary-color);
+    }
+
+    .calendar-day.empty-current-month {
+        cursor: pointer;
+    }
+
+    .calendar-day.empty-current-month:hover {
+        background: #f4f9ff;
+    }
+
+    .event-list {
+        display: flex;
+        flex-direction: column;
+        gap: .2rem;
+        overflow: hidden;
+    }
+
+    .event-chip {
+        border: 0;
+        border-radius: .35rem;
+        padding: .15rem .35rem;
+        font-size: .72rem;
+        text-align: left;
+        color: #fff;
+        background: #0d6efd;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+</style>
 
 <partial name="_AdminNav" />
 
@@ -12,57 +120,253 @@
 
 <div class="row g-4">
     <div class="col-md-3">
-        <div class="card text-bg-primary">
-            <div class="card-body text-center">
-                <i class="bi bi-collection fs-1"></i>
-                <h3 class="mt-2">@classCount</h3>
-                <p class="mb-0">Класів</p>
+        <a asp-action="Classes" class="dashboard-card-link">
+            <div class="card text-bg-primary">
+                <div class="card-body text-center">
+                    <i class="bi bi-collection fs-1"></i>
+                    <h3 class="mt-2">@classCount</h3>
+                    <p class="mb-0">Класів</p>
+                </div>
             </div>
-        </div>
+        </a>
     </div>
     <div class="col-md-3">
-        <div class="card text-bg-success">
-            <div class="card-body text-center">
-                <i class="bi bi-people fs-1"></i>
-                <h3 class="mt-2">@teacherCount</h3>
-                <p class="mb-0">Вчителів</p>
+        <a asp-action="Teachers" class="dashboard-card-link">
+            <div class="card text-bg-success">
+                <div class="card-body text-center">
+                    <i class="bi bi-people fs-1"></i>
+                    <h3 class="mt-2">@teacherCount</h3>
+                    <p class="mb-0">Вчителів</p>
+                </div>
             </div>
-        </div>
+        </a>
     </div>
     <div class="col-md-3">
-        <div class="card text-bg-info">
-            <div class="card-body text-center">
-                <i class="bi bi-mortarboard fs-1"></i>
-                <h3 class="mt-2">@studentCount</h3>
-                <p class="mb-0">Учнів</p>
+        <a asp-action="Classes" class="dashboard-card-link">
+            <div class="card text-bg-info">
+                <div class="card-body text-center">
+                    <i class="bi bi-mortarboard fs-1"></i>
+                    <h3 class="mt-2">@studentCount</h3>
+                    <p class="mb-0">Учнів</p>
+                </div>
             </div>
-        </div>
+        </a>
     </div>
     <div class="col-md-3">
-        <div class="card text-bg-warning">
-            <div class="card-body text-center">
-                <i class="bi bi-book fs-1"></i>
-                <h3 class="mt-2">@subjectCount</h3>
-                <p class="mb-0">Предметів</p>
+        <a asp-action="Subjects" class="dashboard-card-link">
+            <div class="card text-bg-warning">
+                <div class="card-body text-center">
+                    <i class="bi bi-book fs-1"></i>
+                    <h3 class="mt-2">@subjectCount</h3>
+                    <p class="mb-0">Предметів</p>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<div class="mt-5">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 class="mb-0">Події школи</h5>
+        <span class="text-muted small">@monthStart.ToString("MMMM yyyy")</span>
+    </div>
+
+    <div class="events-calendar">
+        <div class="calendar-weekdays">
+            <div>Пн</div>
+            <div>Вт</div>
+            <div>Ср</div>
+            <div>Чт</div>
+            <div>Пт</div>
+            <div>Сб</div>
+            <div>Нд</div>
+        </div>
+
+        <div class="calendar-grid" id="calendarGrid">
+            @for (var i = 0; i < totalDays; i++)
+            {
+                var day = gridStart.AddDays(i);
+                var inCurrentMonth = day.Month == monthStart.Month;
+                var dayEvents = eventsByDate.TryGetValue(day.Date, out var list) ? list : new List<EduLog.Models.SchoolEvent>();
+                var isEmptyCurrentMonth = inCurrentMonth && !dayEvents.Any();
+
+                <div class="calendar-day @(inCurrentMonth ? "" : "other-month") @(isEmptyCurrentMonth ? "empty-current-month" : "")"
+                     data-date="@day.ToString("yyyy-MM-dd")"
+                     data-in-month="@(inCurrentMonth ? "1" : "0")"
+                     data-has-events="@(dayEvents.Any() ? "1" : "0")">
+                    <div class="small fw-semibold">@day.Day</div>
+                    <div class="event-list">
+                        @foreach (var ev in dayEvents)
+                        {
+                            <button type="button"
+                                    class="event-chip"
+                                    data-event-id="@ev.Id"
+                                    style="@(string.IsNullOrWhiteSpace(ev.Color) ? null : $"background:{ev.Color};")"
+                                    title="Натисніть, щоб видалити">
+                                @ev.Title
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="eventModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title">Нова подія</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-muted mb-2">Дата: <span id="eventDateLabel"></span></div>
+                <input type="hidden" id="eventDateInput" />
+                <div class="mb-2">
+                    <label class="form-label small">Назва</label>
+                    <input type="text" id="eventTitleInput" class="form-control form-control-sm" maxlength="100" />
+                </div>
+                <div>
+                    <label class="form-label small">Колір (необов'язково)</label>
+                    <input type="color" id="eventColorInput" class="form-control form-control-color" value="#0d6efd" />
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Скасувати</button>
+                <button type="button" class="btn btn-primary btn-sm" id="saveEventBtn">Додати</button>
             </div>
         </div>
     </div>
 </div>
 
-<div class="row mt-5 g-3">
-    <div class="col-md-4">
-        <a asp-action="Classes" class="btn btn-outline-primary w-100 py-3">
-            <i class="bi bi-collection"></i> Управління класами
-        </a>
-    </div>
-    <div class="col-md-4">
-        <a asp-action="Teachers" class="btn btn-outline-success w-100 py-3">
-            <i class="bi bi-people"></i> Вчителі
-        </a>
-    </div>
-    <div class="col-md-4">
-        <a asp-action="Schedule" class="btn btn-outline-secondary w-100 py-3">
-            <i class="bi bi-table"></i> Розклад
-        </a>
-    </div>
-</div>
+@section Scripts {
+<script>
+    var eventsData = @Html.Raw(eventsJson);
+    var calendarGrid = document.getElementById('calendarGrid');
+    var eventModalEl = document.getElementById('eventModal');
+    var eventModal = new bootstrap.Modal(eventModalEl);
+    var eventDateInput = document.getElementById('eventDateInput');
+    var eventDateLabel = document.getElementById('eventDateLabel');
+    var eventTitleInput = document.getElementById('eventTitleInput');
+    var eventColorInput = document.getElementById('eventColorInput');
+    var saveEventBtn = document.getElementById('saveEventBtn');
+
+    function escapeHtml(text) {
+        return (text || '').replace(/[&<>"']/g, function (ch) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[ch];
+        });
+    }
+
+    function openEventModal(date) {
+        eventDateInput.value = date;
+        eventDateLabel.textContent = date;
+        eventTitleInput.value = '';
+        eventColorInput.value = '#0d6efd';
+        eventModal.show();
+        setTimeout(function () { eventTitleInput.focus(); }, 120);
+    }
+
+    function appendEventToDay(dayCell, ev) {
+        var list = dayCell.querySelector('.event-list');
+        var chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'event-chip';
+        chip.setAttribute('data-event-id', ev.id);
+        chip.setAttribute('title', 'Натисніть, щоб видалити');
+        chip.innerHTML = escapeHtml(ev.title);
+        if (ev.color) {
+            chip.style.background = ev.color;
+        }
+        list.appendChild(chip);
+        dayCell.dataset.hasEvents = '1';
+        dayCell.classList.remove('empty-current-month');
+    }
+
+    calendarGrid.addEventListener('click', function (e) {
+        var chip = e.target.closest('.event-chip');
+        if (chip) {
+            var eventId = parseInt(chip.dataset.eventId, 10);
+            if (!eventId || !confirm('Видалити подію?')) {
+                return;
+            }
+
+            fetch('@Url.Action("DeleteEvent", "Admin")', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                body: new URLSearchParams({ id: eventId.toString() })
+            })
+            .then(function (r) {
+                if (!r.ok) {
+                    throw new Error('Delete failed');
+                }
+                return r.json();
+            })
+            .then(function (data) {
+                if (!data.success) {
+                    return;
+                }
+                var dayCell = chip.closest('.calendar-day');
+                chip.remove();
+                var hasLeft = dayCell.querySelectorAll('.event-chip').length > 0;
+                dayCell.dataset.hasEvents = hasLeft ? '1' : '0';
+                if (!hasLeft && dayCell.dataset.inMonth === '1') {
+                    dayCell.classList.add('empty-current-month');
+                }
+            })
+            .catch(function () {
+                alert('Не вдалося видалити подію.');
+            });
+            return;
+        }
+
+        var dayCell = e.target.closest('.calendar-day');
+        if (!dayCell || dayCell.dataset.inMonth !== '1' || dayCell.dataset.hasEvents !== '0') {
+            return;
+        }
+
+        openEventModal(dayCell.dataset.date);
+    });
+
+    saveEventBtn.addEventListener('click', function () {
+        var title = eventTitleInput.value.trim();
+        var date = eventDateInput.value;
+        var color = eventColorInput.value;
+
+        if (!title) {
+            eventTitleInput.focus();
+            return;
+        }
+
+        fetch('@Url.Action("CreateEvent", "Admin")', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: new URLSearchParams({
+                title: title,
+                date: date,
+                color: color
+            })
+        })
+        .then(function (r) {
+            if (!r.ok) {
+                throw new Error('Create failed');
+            }
+            return r.json();
+        })
+        .then(function (data) {
+            if (!data.success) {
+                return;
+            }
+
+            var dayCell = calendarGrid.querySelector('.calendar-day[data-date="' + data.date + '"]');
+            if (dayCell) {
+                appendEventToDay(dayCell, data);
+            }
+            eventModal.hide();
+        })
+        .catch(function () {
+            alert('Не вдалося додати подію.');
+        });
+    });
+</script>
+}

@@ -30,4 +30,10 @@ namespace EduLog.Models.Admin
         public int SubjectId { get; set; }
         public int TeacherId { get; set; }
     }
+
+    public class SubjectTeacherRequest
+    {
+        public int SubjectId { get; set; }
+        public int TeacherId { get; set; }
+    }
 }

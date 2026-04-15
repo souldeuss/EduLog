@@ -4,6 +4,7 @@ using EduLog.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EduLog.Migrations
 {
     [DbContext(typeof(EduLogContext))]
-    partial class EduLogContextModelSnapshot : ModelSnapshot
+    [Migration("20260415150225_FixSubjectTeacherDeleteBehavior")]
+    partial class FixSubjectTeacherDeleteBehavior
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -459,9 +462,6 @@ namespace EduLog.Migrations
 
                     b.Property<int>("HoursPerWeek")
                         .HasColumnType("int");
-
-                    b.Property<bool>("IsRoomFixed")
-                        .HasColumnType("bit");
 
                     b.Property<string>("Name")
                         .IsRequired()

@@ -3,8 +3,10 @@
 @{
     ViewData["Title"] = "Предмети";
     var error = TempData["Error"] as string;
-    var teachers = ViewData["Teachers"] as List<EduLog.Models.Teacher>;
-    var classes = ViewData["Classes"] as List<EduLog.Models.Class>;
+    var teachers = ViewData["Teachers"] as List<EduLog.Models.Teacher> ?? new();
+    var classes = ViewData["Classes"] as List<EduLog.Models.Class> ?? new();
+    var rooms = ViewData["Rooms"] as List<EduLog.Models.Room> ?? new();
+    var teacherOptionsHtml = string.Join("", teachers.Select(t => $"<option value=\"{t.Id}\">{t.Surname} {t.Name}</option>"));
 }
 
 <partial name="_AdminNav" />
@@ -56,88 +58,224 @@
 </div>
 
 <!-- Toolbar -->
-<div class="d-flex align-items-center gap-2 mb-3">
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
     <h5 class="mb-0">Поточні прив'язки</h5>
     <span class="badge bg-success-subtle text-success">@Model.Count предметів</span>
-    <div class="flex-grow-1"></div>
-    <button class="btn btn-outline-primary btn-sm" onclick="togglePanel('bulkPanel')">
-        <i class="bi bi-list-ul"></i> Масове додавання
-    </button>
-    <button class="btn btn-success btn-sm" onclick="togglePanel('addPanel')">
-        <i class="bi bi-plus-lg"></i> Додати предмет
-    </button>
+
+    <div class="ms-auto d-flex align-items-center gap-2">
+        <div class="btn-group btn-group-sm" role="group" aria-label="View toggle">
+            <button type="button" class="btn btn-outline-secondary" id="tableViewBtn" onclick="setSubjectsView('table')">
+                <i class="bi bi-table"></i> Таблиця
+            </button>
+            <button type="button" class="btn btn-outline-secondary" id="cardsViewBtn" onclick="setSubjectsView('cards')">
+                <i class="bi bi-grid-3x3-gap"></i> Картки
+            </button>
+        </div>
+
+        <select id="groupMode" class="form-select form-select-sm" style="min-width:210px" onchange="applyGrouping()">
+            <option value="all">Всі</option>
+            <option value="teacher">За вчителем</option>
+            <option value="level">За шкільною ланкою</option>
+        </select>
+
+        <button class="btn btn-outline-primary btn-sm" onclick="togglePanel('bulkPanel')">
+            <i class="bi bi-list-ul"></i> Масове додавання
+        </button>
+        <button class="btn btn-success btn-sm" onclick="togglePanel('addPanel')">
+            <i class="bi bi-plus-lg"></i> Додати предмет
+        </button>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <input type="search" id="subjectSearch" class="form-control form-control-sm" placeholder="Пошук за назвою предмету" oninput="applyGrouping()" />
+            </div>
+            <div class="col-md-4">
+                <select id="teacherFilter" class="form-select form-select-sm" onchange="applyGrouping()">
+                    <option value="">Всі вчителі</option>
+                    @foreach (var t in teachers)
+                    {
+                        <option value="@t.Id">@t.Surname @t.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <select id="classFilter" class="form-select form-select-sm" onchange="applyGrouping()">
+                    <option value="">Всі класи</option>
+                    @foreach (var c in classes)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                </select>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Main table -->
-<div class="card mb-3">
-    <table class="table table-hover mb-0" id="subjectsTable">
-        <thead>
-            <tr>
-                <th style="width:200px">Назва</th>
-                <th style="width:220px">Вчитель</th>
-                <th>Класи</th>
-                <th style="width:50px"></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var s in Model)
-            {
-                <tr id="subject-row-@s.Id">
-                    <td><strong>@s.Name</strong></td>
-                    <td>
-                        <div class="d-inline-flex align-items-center gap-1 position-relative">
-                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle teacher-badge"
-                                  style="cursor:pointer" onclick="toggleTeacherDropdown(this, @s.Id)">
-                                <span class="teacher-name">@(s.Teacher != null ? $"{s.Teacher.Surname} {s.Teacher.Name}" : "—")</span>
-                                <i class="bi bi-pencil-fill ms-1" style="font-size:10px"></i>
-                            </span>
-                            <div class="dropdown-menu p-2 teacher-dropdown" style="min-width:200px">
-                                <label class="form-label mb-1 small fw-bold">Змінити вчителя</label>
-                                <select class="form-select form-select-sm" onchange="changeTeacher(@s.Id, this)">
-                                    @foreach (var t in teachers!)
-                                    {
-                                        if (s.TeacherId == t.Id)
-                                        {
-                                            <option value="@t.Id" selected="selected">@t.Surname @t.Name</option>
-                                        }
-                                        else
-                                        {
-                                            <option value="@t.Id">@t.Surname @t.Name</option>
-                                        }
-                                    }
-                                </select>
-                            </div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="d-flex flex-wrap gap-1 align-items-center chips-container" data-subject="@s.Id">
-                            @if (s.ClassSubjects != null)
-                            {
-                                @foreach (var cs in s.ClassSubjects)
+<div class="card mb-3" id="subjectsTableWrapper">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0" id="subjectsTable">
+            <thead>
+                <tr>
+                    <th style="width:220px">Назва</th>
+                    <th style="width:280px">Вчителі</th>
+                    <th>Класи</th>
+                    <th style="width:130px">Год/тиж</th>
+                    <th style="width:260px">Профільний клас (кабінет)</th>
+                    <th style="width:110px"></th>
+                </tr>
+            </thead>
+            <tbody id="subjectsTableBody">
+                @foreach (var s in Model)
+                {
+                    var assignedTeachers = (s.SubjectTeachers ?? new List<EduLog.Models.SubjectTeacher>())
+                        .Select(st => st.Teacher)
+                        .Where(t => t != null)
+                        .OrderBy(t => t.Surname)
+                        .ThenBy(t => t.Name)
+                        .ToList();
+
+                    if (!assignedTeachers.Any() && s.Teacher != null)
+                    {
+                        assignedTeachers.Add(s.Teacher);
+                    }
+
+                    var primaryTeacher = assignedTeachers.FirstOrDefault() != null
+                        ? $"{assignedTeachers.First().Surname} {assignedTeachers.First().Name}".Trim()
+                        : "Без вчителя";
+
+                    var classNames = (s.ClassSubjects ?? new List<EduLog.Models.ClassSubject>())
+                        .Select(cs => cs.Class?.Name ?? "")
+                        .Where(name => !string.IsNullOrWhiteSpace(name))
+                        .ToList();
+
+                    var minGrade = classNames
+                        .Select(name =>
+                        {
+                            var m = System.Text.RegularExpressions.Regex.Match(name, "^(\\d{1,2})");
+                            return m.Success ? int.Parse(m.Groups[1].Value) : (int?)null;
+                        })
+                        .Where(g => g.HasValue)
+                        .Select(g => g!.Value)
+                        .DefaultIfEmpty(0)
+                        .Min();
+
+                    var schoolLevel = minGrade switch
+                    {
+                        >= 1 and <= 4 => "Початкова (1-4)",
+                        >= 5 and <= 9 => "Середня (5-9)",
+                        >= 10 and <= 11 => "Старша (10-11)",
+                        _ => "Без рівня"
+                    };
+
+                    <tr class="subject-row subject-editor"
+                        id="subject-row-@s.Id"
+                        data-subject-id="@s.Id"
+                        data-subject-name="@s.Name"
+                        data-teacher-ids="@string.Join(",", assignedTeachers.Select(t => t.Id))"
+                        data-class-ids="@string.Join(",", (s.ClassSubjects ?? new List<EduLog.Models.ClassSubject>()).Select(cs => cs.ClassId))"
+                        data-primary-teacher="@primaryTeacher"
+                        data-school-level="@schoolLevel">
+                        <td>
+                            <input class="form-control form-control-sm subject-name-input"
+                                   data-subject-name-input="@s.Id"
+                                   value="@s.Name"
+                                   onchange="updateSubjectField(this, @s.Id)" />
+                            <div class="small text-muted mt-1 subject-name-text" data-subject-name-text="@s.Id">@s.Name</div>
+                            <div class="small mt-1 subject-warning" data-subject-warning="@s.Id"></div>
+                        </td>
+                        <td>
+                            <div class="teacher-chips d-flex flex-wrap gap-1 mb-2" data-subject="@s.Id">
+                                @foreach (var t in assignedTeachers)
                                 {
-                                    <span class="badge bg-success-subtle text-success border border-success-subtle d-flex align-items-center gap-1 class-chip">
-                                        @cs.Class.Name
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle d-inline-flex align-items-center gap-1 teacher-chip"
+                                          data-teacher-id="@t.Id">
+                                        @t.Surname @t.Name
                                         <button type="button" class="btn-close btn-close-sm" style="font-size:8px"
-                                                onclick="removeClassChip(this, @s.Id, @cs.ClassId)"></button>
+                                                onclick="removeTeacherFromSubject(@s.Id, @t.Id)"></button>
                                     </span>
                                 }
-                            }
-                            <button class="btn btn-sm btn-outline-success border-dashed py-0 px-2"
-                                    style="font-size:12px; border-style:dashed"
-                                    onclick="openAddClassModal(@s.Id, '@s.Name')">+ клас</button>
-                        </div>
-                    </td>
-                    <td>
-                        <form asp-action="DeleteSubject" method="post" class="d-inline"
-                              onsubmit="return confirm('Видалити предмет @s.Name?')">
-                            <input type="hidden" name="id" value="@s.Id" />
-                            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-                        </form>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
+                            </div>
+                            <div class="d-flex gap-1">
+                                <select class="form-select form-select-sm" data-teacher-select="@s.Id">
+                                    <option value="">— додати вчителя —</option>
+                                    @foreach (var t in teachers)
+                                    {
+                                        var selected = assignedTeachers.Any(x => x.Id == t.Id);
+                                        <option value="@t.Id" disabled="@(selected ? "disabled" : null)">@t.Surname @t.Name</option>
+                                    }
+                                </select>
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTeacherToSubject(@s.Id, this)">
+                                    +
+                                </button>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="d-flex flex-wrap gap-1 align-items-center chips-container" data-subject="@s.Id">
+                                @if (s.ClassSubjects != null)
+                                {
+                                    foreach (var cs in s.ClassSubjects)
+                                    {
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle d-flex align-items-center gap-1 class-chip" data-class-id="@cs.ClassId">
+                                            @cs.Class.Name
+                                            <button type="button" class="btn-close btn-close-sm" style="font-size:8px"
+                                                    onclick="removeClassChip(this, @s.Id, @cs.ClassId)"></button>
+                                        </span>
+                                    }
+                                }
+                                <button class="btn btn-sm btn-outline-success border-dashed py-0 px-2"
+                                        style="font-size:12px; border-style:dashed"
+                                        onclick="openAddClassModal(@s.Id, @Html.Raw(System.Text.Json.JsonSerializer.Serialize(s.Name)))">+ клас</button>
+                            </div>
+                        </td>
+                        <td>
+                            <input type="number"
+                                   min="1"
+                                   class="form-control form-control-sm subject-hours-input"
+                                   data-subject-hours-input="@s.Id"
+                                   value="@s.HoursPerWeek"
+                                   onchange="updateSubjectField(this, @s.Id)" />
+                        </td>
+                        <td>
+                            <select class="form-select form-select-sm subject-room-select"
+                                    data-subject-room-select="@s.Id"
+                                    onchange="updateSubjectField(this, @s.Id)">
+                                <option value="">— не вказано —</option>
+                                @foreach (var room in rooms)
+                                {
+                                    if (s.DefaultRoomId == room.Id)
+                                    {
+                                        <option value="@room.Id" selected="selected">@room.Number</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@room.Id">@room.Number</option>
+                                    }
+                                }
+                            </select>
+                            <div class="form-check mt-1">
+                                <input class="form-check-input subject-fixed-room" type="checkbox" data-subject-fixed-room="@s.Id" @(s.IsRoomFixed ? "checked" : null) onchange="updateSubjectField(this, @s.Id)" />
+                                <label class="form-check-label small text-muted">Фіксований кабінет</label>
+                            </div>
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-secondary mb-1" onclick="focusSubjectEditor(@s.Id)"><i class="bi bi-pencil"></i></button>
+                            <form asp-action="DeleteSubject" method="post" class="d-inline"
+                                  onsubmit="return confirm('Видалити предмет @s.Name?')">
+                                <input type="hidden" name="id" value="@s.Id" />
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
     @if (!Model.Any())
     {
         <div class="text-center text-muted py-4">
@@ -145,6 +283,173 @@
             <p class="mt-2 mb-0">Ще немає предметів. Додайте перший!</p>
         </div>
     }
+</div>
+
+<!-- Cards view -->
+<div id="subjectsCardsWrapper" class="mb-3" style="display:none">
+    <div id="subjectsCardsGroups" class="d-flex flex-column gap-3">
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3" id="subjectsCardsGrid">
+            @foreach (var s in Model)
+            {
+                var assignedTeachers = (s.SubjectTeachers ?? new List<EduLog.Models.SubjectTeacher>())
+                    .Select(st => st.Teacher)
+                    .Where(t => t != null)
+                    .OrderBy(t => t.Surname)
+                    .ThenBy(t => t.Name)
+                    .ToList();
+
+                if (!assignedTeachers.Any() && s.Teacher != null)
+                {
+                    assignedTeachers.Add(s.Teacher);
+                }
+
+                var primaryTeacher = assignedTeachers.FirstOrDefault() != null
+                    ? $"{assignedTeachers.First().Surname} {assignedTeachers.First().Name}".Trim()
+                    : "Без вчителя";
+
+                var classNames = (s.ClassSubjects ?? new List<EduLog.Models.ClassSubject>())
+                    .Select(cs => cs.Class?.Name ?? "")
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .ToList();
+
+                var minGrade = classNames
+                    .Select(name =>
+                    {
+                        var m = System.Text.RegularExpressions.Regex.Match(name, "^(\\d{1,2})");
+                        return m.Success ? int.Parse(m.Groups[1].Value) : (int?)null;
+                    })
+                    .Where(g => g.HasValue)
+                    .Select(g => g!.Value)
+                    .DefaultIfEmpty(0)
+                    .Min();
+
+                var schoolLevel = minGrade switch
+                {
+                    >= 1 and <= 4 => "Початкова (1-4)",
+                    >= 5 and <= 9 => "Середня (5-9)",
+                    >= 10 and <= 11 => "Старша (10-11)",
+                    _ => "Без рівня"
+                };
+
+                <div class="col subject-card-item"
+                     id="subject-card-@s.Id"
+                     data-subject-id="@s.Id"
+                     data-subject-name="@s.Name"
+                     data-teacher-ids="@string.Join(",", assignedTeachers.Select(t => t.Id))"
+                     data-class-ids="@string.Join(",", (s.ClassSubjects ?? new List<EduLog.Models.ClassSubject>()).Select(cs => cs.ClassId))"
+                     data-primary-teacher="@primaryTeacher"
+                     data-school-level="@schoolLevel">
+                    <div class="card h-100 subject-editor">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <input class="form-control form-control-sm subject-name-input mb-1"
+                                           data-subject-name-input="@s.Id"
+                                           value="@s.Name"
+                                           onchange="updateSubjectField(this, @s.Id)" />
+                                    <div class="small text-muted subject-name-text" data-subject-name-text="@s.Id">@s.Name</div>
+                                </div>
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-secondary" onclick="focusSubjectEditor(@s.Id)"><i class="bi bi-pencil"></i></button>
+                                    <form asp-action="DeleteSubject" method="post" class="d-inline"
+                                          onsubmit="return confirm('Видалити предмет @s.Name?')">
+                                        <input type="hidden" name="id" value="@s.Id" />
+                                        <button class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                </div>
+                            </div>
+
+                            <div class="small text-muted mb-2">
+                                Основний вчитель: <span data-subject-primary-teacher="@s.Id">@primaryTeacher</span>
+                            </div>
+                            <div class="small mb-2 subject-warning" data-subject-warning="@s.Id"></div>
+
+                            <div class="mb-2">
+                                <div class="small fw-bold mb-1">Вчителі</div>
+                                <div class="teacher-chips d-flex flex-wrap gap-1 mb-2" data-subject="@s.Id">
+                                    @foreach (var t in assignedTeachers)
+                                    {
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle d-inline-flex align-items-center gap-1 teacher-chip"
+                                              data-teacher-id="@t.Id">
+                                            @t.Surname @t.Name
+                                            <button type="button" class="btn-close btn-close-sm" style="font-size:8px"
+                                                    onclick="removeTeacherFromSubject(@s.Id, @t.Id)"></button>
+                                        </span>
+                                    }
+                                </div>
+                                <div class="d-flex gap-1">
+                                    <select class="form-select form-select-sm" data-teacher-select="@s.Id">
+                                        <option value="">— додати вчителя —</option>
+                                        @foreach (var t in teachers)
+                                        {
+                                            var selected = assignedTeachers.Any(x => x.Id == t.Id);
+                                            <option value="@t.Id" disabled="@(selected ? "disabled" : null)">@t.Surname @t.Name</option>
+                                        }
+                                    </select>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTeacherToSubject(@s.Id, this)">+</button>
+                                </div>
+                            </div>
+
+                            <div class="mb-2">
+                                <div class="small fw-bold mb-1">Класи</div>
+                                <div class="d-flex flex-wrap gap-1 chips-container" data-subject="@s.Id">
+                                    @if (s.ClassSubjects != null)
+                                    {
+                                        foreach (var cs in s.ClassSubjects)
+                                        {
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle d-flex align-items-center gap-1 class-chip" data-class-id="@cs.ClassId">
+                                                @cs.Class.Name
+                                                <button type="button" class="btn-close btn-close-sm" style="font-size:8px"
+                                                        onclick="removeClassChip(this, @s.Id, @cs.ClassId)"></button>
+                                            </span>
+                                        }
+                                    }
+                                    <button class="btn btn-sm btn-outline-success border-dashed py-0 px-2"
+                                            style="font-size:12px; border-style:dashed"
+                                            onclick="openAddClassModal(@s.Id, @Html.Raw(System.Text.Json.JsonSerializer.Serialize(s.Name)))">+ клас</button>
+                                </div>
+                            </div>
+
+                            <div class="row g-2 align-items-end">
+                                <div class="col-4">
+                                    <label class="form-label small mb-1">Год/тиж</label>
+                                    <input type="number"
+                                           min="1"
+                                           class="form-control form-control-sm subject-hours-input"
+                                           data-subject-hours-input="@s.Id"
+                                           value="@s.HoursPerWeek"
+                                           onchange="updateSubjectField(this, @s.Id)" />
+                                </div>
+                                <div class="col-8">
+                                    <label class="form-label small mb-1">Профільний клас (кабінет)</label>
+                                    <select class="form-select form-select-sm subject-room-select"
+                                            data-subject-room-select="@s.Id"
+                                            onchange="updateSubjectField(this, @s.Id)">
+                                        <option value="">— не вказано —</option>
+                                        @foreach (var room in rooms)
+                                        {
+                                            if (s.DefaultRoomId == room.Id)
+                                            {
+                                                <option value="@room.Id" selected="selected">@room.Number</option>
+                                            }
+                                            else
+                                            {
+                                                <option value="@room.Id">@room.Number</option>
+                                            }
+                                        }
+                                    </select>
+                                    <div class="form-check mt-1">
+                                        <input class="form-check-input subject-fixed-room" type="checkbox" data-subject-fixed-room="@s.Id" @(s.IsRoomFixed ? "checked" : null) onchange="updateSubjectField(this, @s.Id)" />
+                                        <label class="form-check-label small text-muted">Фіксований кабінет</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
 </div>
 
 <!-- Add single subject panel -->
@@ -155,25 +460,45 @@
     <div class="card-body">
         <form asp-action="CreateSubject" method="post">
             <div class="row mb-3">
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <label class="form-label small fw-bold">Назва предмету *</label>
                     <input type="text" name="name" class="form-control" placeholder="напр. Фізика" required />
                 </div>
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <label class="form-label small fw-bold">Вчитель *</label>
                     <select name="teacherId" class="form-select" required>
                         <option value="">— оберіть вчителя —</option>
-                        @foreach (var t in teachers!)
+                        @foreach (var t in teachers)
                         {
                             <option value="@t.Id">@t.Surname @t.Name</option>
                         }
                     </select>
                 </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Год/тиж</label>
+                    <input type="number" name="hoursPerWeek" class="form-control" min="1" value="1" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Профільний кабінет</label>
+                    <select name="defaultRoomId" class="form-select">
+                        <option value="">— не вказано —</option>
+                        @foreach (var room in rooms)
+                        {
+                            <option value="@room.Id">@room.Number</option>
+                        }
+                    </select>
+                </div>
             </div>
             <div class="mb-3">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="createSubjectFixedRoom" name="isRoomFixed" value="true" />
+                    <label class="form-check-label small fw-bold" for="createSubjectFixedRoom">
+                        Фіксований кабінет (профільний клас)
+                    </label>
+                </div>
                 <label class="form-label small fw-bold">Класи — оберіть один або декілька</label>
                 <div class="d-flex flex-wrap gap-2">
-                    @foreach (var c in classes!)
+                    @foreach (var c in classes)
                     {
                         <label class="btn btn-sm btn-outline-success d-flex align-items-center gap-1" style="cursor:pointer">
                             <input type="checkbox" name="classIds" value="@c.Id" class="form-check-input m-0" />
@@ -205,7 +530,7 @@
                 <div class="col-auto" style="width:220px">
                     <select class="form-select form-select-sm bulk-teacher">
                         <option value="">— вчитель —</option>
-                        @foreach (var t in teachers!)
+                        @foreach (var t in teachers)
                         {
                             <option value="@t.Id">@t.Surname @t.Name</option>
                         }
@@ -222,7 +547,7 @@
                 <div class="col-auto" style="width:220px">
                     <select class="form-select form-select-sm bulk-teacher">
                         <option value="">— вчитель —</option>
-                        @foreach (var t in teachers!)
+                        @foreach (var t in teachers)
                         {
                             <option value="@t.Id">@t.Surname @t.Name</option>
                         }
@@ -255,7 +580,7 @@
                 <p class="text-muted small mb-2" id="modalSubjectLabel"></p>
                 <label class="form-label small fw-bold">Клас</label>
                 <select class="form-select" id="modalClassSelect">
-                    @foreach (var c in classes!)
+                    @foreach (var c in classes)
                     {
                         <option value="@c.Id">@c.Name</option>
                     }
@@ -273,6 +598,44 @@
 <script>
     var _modalSubjectId = 0;
     var _importRows = [];
+    var _subjectsViewKey = 'admin.subjects.view';
+    var _teacherOptionsHtml = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(teacherOptionsHtml));
+
+    function parseCsvSet(raw) {
+        return (raw || '').split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x.length > 0; });
+    }
+
+    function getActiveFilters() {
+        return {
+            search: (document.getElementById('subjectSearch')?.value || '').trim().toLowerCase(),
+            teacherId: document.getElementById('teacherFilter')?.value || '',
+            classId: document.getElementById('classFilter')?.value || ''
+        };
+    }
+
+    function matchesFilters(element) {
+        var filters = getActiveFilters();
+        var subjectName = (element.dataset.subjectName || '').toLowerCase();
+        if (filters.search && subjectName.indexOf(filters.search) === -1) {
+            return false;
+        }
+
+        if (filters.teacherId) {
+            var teacherIds = parseCsvSet(element.dataset.teacherIds);
+            if (teacherIds.indexOf(filters.teacherId) === -1) {
+                return false;
+            }
+        }
+
+        if (filters.classId) {
+            var classIds = parseCsvSet(element.dataset.classIds);
+            if (classIds.indexOf(filters.classId) === -1) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     // ── Panel toggle ──
     function togglePanel(id) {
@@ -285,34 +648,308 @@
         }
     }
 
-    // ── Teacher inline dropdown ──
-    function toggleTeacherDropdown(badge, subjectId) {
-        var dd = badge.parentElement.querySelector('.teacher-dropdown');
-        document.querySelectorAll('.teacher-dropdown.show').forEach(function (d) {
-            if (d !== dd) d.classList.remove('show');
-        });
-        dd.classList.toggle('show');
+    // ── View mode toggle ──
+    function setSubjectsView(mode) {
+        localStorage.setItem(_subjectsViewKey, mode);
+        var table = document.getElementById('subjectsTableWrapper');
+        var cards = document.getElementById('subjectsCardsWrapper');
+        var tableBtn = document.getElementById('tableViewBtn');
+        var cardsBtn = document.getElementById('cardsViewBtn');
+
+        if (mode === 'cards') {
+            table.style.display = 'none';
+            cards.style.display = 'block';
+            tableBtn.classList.remove('active');
+            cardsBtn.classList.add('active');
+        } else {
+            table.style.display = 'block';
+            cards.style.display = 'none';
+            tableBtn.classList.add('active');
+            cardsBtn.classList.remove('active');
+        }
     }
 
-    document.addEventListener('click', function (e) {
-        if (!e.target.closest('.teacher-badge') && !e.target.closest('.teacher-dropdown')) {
-            document.querySelectorAll('.teacher-dropdown.show').forEach(function (d) { d.classList.remove('show'); });
-        }
-    });
+    function getInitialViewMode() {
+        var mode = localStorage.getItem(_subjectsViewKey);
+        return mode === 'cards' ? 'cards' : 'table';
+    }
 
-    function changeTeacher(subjectId, sel) {
-        var teacherId = parseInt(sel.value);
-        var teacherName = sel.options[sel.selectedIndex].text;
-        fetch('@Url.Action("ChangeSubjectTeacher", "Admin")', {
+    // ── Grouping ──
+    function applyGrouping() {
+        var mode = document.getElementById('groupMode').value;
+        renderGroupedTable(mode);
+        renderGroupedCards(mode);
+    }
+
+    function getGroupKey(element, mode) {
+        if (mode === 'teacher') {
+            return element.dataset.primaryTeacher || 'Без вчителя';
+        }
+        if (mode === 'level') {
+            return element.dataset.schoolLevel || 'Без рівня';
+        }
+        return 'Всі';
+    }
+
+    function getOrderedKeys(map, mode) {
+        if (mode !== 'level') {
+            return Array.from(map.keys()).sort();
+        }
+
+        var levelOrder = ['Початкова (1-4)', 'Середня (5-9)', 'Старша (10-11)', 'Без рівня'];
+        return levelOrder.filter(function (key) { return map.has(key); });
+    }
+
+    function renderGroupedTable(mode) {
+        var body = document.getElementById('subjectsTableBody');
+        var rows = Array.from(document.querySelectorAll('.subject-row')).filter(matchesFilters);
+        body.innerHTML = '';
+
+        if (mode === 'all') {
+            rows.forEach(function (row) { body.appendChild(row); });
+            return;
+        }
+
+        var map = new Map();
+        rows.forEach(function (row) {
+            var key = getGroupKey(row, mode);
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push(row);
+        });
+
+        getOrderedKeys(map, mode).forEach(function (key) {
+            var tr = document.createElement('tr');
+            tr.className = 'table-light';
+            tr.innerHTML = '<td colspan="6" class="fw-bold small text-uppercase">' + key + '</td>';
+            body.appendChild(tr);
+
+            map.get(key).forEach(function (row) { body.appendChild(row); });
+        });
+    }
+
+    function renderGroupedCards(mode) {
+        var host = document.getElementById('subjectsCardsGroups');
+        var cards = Array.from(document.querySelectorAll('.subject-card-item')).filter(matchesFilters);
+        host.innerHTML = '';
+
+        if (mode === 'all') {
+            var grid = document.createElement('div');
+            grid.className = 'row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3';
+            cards.forEach(function (card) { grid.appendChild(card); });
+            host.appendChild(grid);
+            return;
+        }
+
+        var map = new Map();
+        cards.forEach(function (card) {
+            var key = getGroupKey(card, mode);
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push(card);
+        });
+
+        getOrderedKeys(map, mode).forEach(function (key) {
+            var section = document.createElement('div');
+            section.className = 'card border-0 shadow-sm';
+            section.innerHTML = '<div class="card-header bg-light fw-bold">' + key + '</div>';
+
+            var body = document.createElement('div');
+            body.className = 'card-body';
+
+            var grid = document.createElement('div');
+            grid.className = 'row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3';
+            map.get(key).forEach(function (card) { grid.appendChild(card); });
+
+            body.appendChild(grid);
+            section.appendChild(body);
+            host.appendChild(section);
+        });
+    }
+
+    // ── Subject fields update ──
+    function updateSubjectField(element, subjectId) {
+        var scope = element.closest('.subject-editor');
+        var nameInput = scope.querySelector('.subject-name-input');
+        var hoursInput = scope.querySelector('.subject-hours-input');
+        var roomSelect = scope.querySelector('.subject-room-select');
+        var fixedRoomCheckbox = scope.querySelector('.subject-fixed-room');
+
+        var payload = new URLSearchParams({
+            id: String(subjectId),
+            name: nameInput ? nameInput.value : '',
+            hoursPerWeek: hoursInput ? String(hoursInput.value || '1') : '1',
+            defaultRoomId: roomSelect && roomSelect.value ? roomSelect.value : '',
+            isRoomFixed: fixedRoomCheckbox && fixedRoomCheckbox.checked ? 'true' : 'false'
+        });
+
+        fetch('@Url.Action("UpdateSubject", "Admin")', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: payload.toString()
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data.success) {
+                alert(data.message || 'Помилка оновлення');
+                return;
+            }
+
+            document.querySelectorAll('[data-subject-name-input="' + subjectId + '"]').forEach(function (el) { el.value = data.name; });
+            document.querySelectorAll('[data-subject-hours-input="' + subjectId + '"]').forEach(function (el) { el.value = data.hoursPerWeek; });
+            document.querySelectorAll('[data-subject-room-select="' + subjectId + '"]').forEach(function (el) {
+                el.value = data.defaultRoomId == null ? '' : String(data.defaultRoomId);
+            });
+            document.querySelectorAll('[data-subject-fixed-room="' + subjectId + '"]').forEach(function (el) {
+                el.checked = !!data.isRoomFixed;
+                if (!data.defaultRoomId) {
+                    el.checked = false;
+                }
+            });
+            document.querySelectorAll('[data-subject-name-text="' + subjectId + '"]').forEach(function (el) { el.textContent = data.name; });
+
+            var row = document.getElementById('subject-row-' + subjectId);
+            var card = document.getElementById('subject-card-' + subjectId);
+            [row, card].forEach(function (el) {
+                if (!el) return;
+                el.dataset.subjectName = data.name || '';
+            });
+
+            refreshSubjectIndicators(subjectId);
+            applyGrouping();
+        });
+    }
+
+    function refreshSubjectGroupingMeta(subjectId) {
+        var row = document.getElementById('subject-row-' + subjectId);
+        var card = document.getElementById('subject-card-' + subjectId);
+        var teacherChips = document.querySelectorAll('.teacher-chips[data-subject="' + subjectId + '"] .teacher-chip');
+        var classChips = document.querySelectorAll('.chips-container[data-subject="' + subjectId + '"] .class-chip');
+
+        var firstTeacher = teacherChips.length ? teacherChips[0] : null;
+        var primaryTeacher = firstTeacher ? firstTeacher.textContent.trim() : 'Без вчителя';
+        var teacherIds = Array.from(teacherChips).map(function (chip) { return chip.getAttribute('data-teacher-id') || ''; }).filter(function (id) { return id; }).join(',');
+        var classIds = Array.from(classChips).map(function (chip) { return chip.getAttribute('data-class-id') || ''; }).filter(function (id) { return id; }).join(',');
+
+        [row, card].forEach(function (el) {
+            if (!el) return;
+            el.dataset.primaryTeacher = primaryTeacher;
+            el.dataset.schoolLevel = calculateSubjectLevel(subjectId);
+            el.dataset.teacherIds = teacherIds;
+            el.dataset.classIds = classIds;
+        });
+
+        document.querySelectorAll('[data-subject-primary-teacher="' + subjectId + '"]').forEach(function (el) {
+            el.textContent = primaryTeacher;
+        });
+
+        refreshSubjectIndicators(subjectId);
+    }
+
+    function refreshSubjectIndicators(subjectId) {
+        var teacherCount = document.querySelectorAll('.teacher-chips[data-subject="' + subjectId + '"] .teacher-chip').length;
+        var classCount = document.querySelectorAll('.chips-container[data-subject="' + subjectId + '"] .class-chip').length;
+        var messages = [];
+
+        if (teacherCount === 0) {
+            messages.push('<span class="badge bg-danger-subtle text-danger border border-danger-subtle me-1">Немає вчителя</span>');
+        }
+        if (classCount === 0) {
+            messages.push('<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Немає класів</span>');
+        }
+
+        document.querySelectorAll('[data-subject-warning="' + subjectId + '"]').forEach(function (el) {
+            el.innerHTML = messages.join('');
+        });
+    }
+
+    function focusSubjectEditor(subjectId) {
+        var target = document.querySelector('#subject-row-' + subjectId + ' .subject-name-input') || document.querySelector('#subject-card-' + subjectId + ' .subject-name-input');
+        if (target) {
+            target.focus();
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+
+    function calculateSubjectLevel(subjectId) {
+        var classChips = document.querySelectorAll('.chips-container[data-subject="' + subjectId + '"] .class-chip');
+        var min = null;
+
+        classChips.forEach(function (chip) {
+            var text = chip.textContent || '';
+            var match = text.trim().match(/^(\d{1,2})/);
+            if (!match) return;
+            var value = parseInt(match[1]);
+            if (!isNaN(value) && (min === null || value < min)) {
+                min = value;
+            }
+        });
+
+        if (min === null) return 'Без рівня';
+        if (min <= 4) return 'Початкова (1-4)';
+        if (min <= 9) return 'Середня (5-9)';
+        return 'Старша (10-11)';
+    }
+
+    // ── Teacher management ──
+    function setTeacherOptionState(subjectId, teacherId, disabled) {
+        document.querySelectorAll('[data-teacher-select="' + subjectId + '"]').forEach(function (sel) {
+            var option = sel.querySelector('option[value="' + teacherId + '"]');
+            if (option) option.disabled = disabled;
+            if (!disabled) sel.value = '';
+        });
+    }
+
+    function buildTeacherChip(subjectId, teacherId, teacherName) {
+        var span = document.createElement('span');
+        span.className = 'badge bg-primary-subtle text-primary border border-primary-subtle d-inline-flex align-items-center gap-1 teacher-chip';
+        span.setAttribute('data-teacher-id', teacherId);
+        span.innerHTML = teacherName +
+            ' <button type="button" class="btn-close btn-close-sm" style="font-size:8px" onclick="removeTeacherFromSubject(' + subjectId + ',' + teacherId + ')"></button>';
+        return span;
+    }
+
+    function addTeacherToSubject(subjectId, button) {
+        var wrap = button.parentElement;
+        var select = wrap ? wrap.querySelector('select[data-teacher-select]') : null;
+        if (!select || !select.value) return;
+
+        var teacherId = parseInt(select.value);
+        fetch('@Url.Action("AddTeacherToSubject", "Admin")', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ subjectId: subjectId, teacherId: teacherId })
         }).then(function (r) { return r.json(); }).then(function (data) {
-            if (data.success) {
-                var row = document.getElementById('subject-row-' + subjectId);
-                row.querySelector('.teacher-name').textContent = data.teacherName;
-                sel.closest('.teacher-dropdown').classList.remove('show');
+            if (!data.success) {
+                alert(data.message || 'Не вдалося додати вчителя');
+                return;
             }
+
+            document.querySelectorAll('.teacher-chips[data-subject="' + subjectId + '"]').forEach(function (container) {
+                if (container.querySelector('[data-teacher-id="' + data.teacherId + '"]')) return;
+                container.appendChild(buildTeacherChip(subjectId, data.teacherId, data.teacherName));
+            });
+
+            setTeacherOptionState(subjectId, data.teacherId, true);
+            refreshSubjectGroupingMeta(subjectId);
+            applyGrouping();
+        });
+    }
+
+    function removeTeacherFromSubject(subjectId, teacherId) {
+        fetch('@Url.Action("RemoveTeacherFromSubject", "Admin")', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subjectId: subjectId, teacherId: teacherId })
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); }).then(function (result) {
+            if (!result.ok || !result.data.success) {
+                alert(result.data.message || 'Не вдалося прибрати вчителя');
+                return;
+            }
+
+            document.querySelectorAll('.teacher-chips[data-subject="' + subjectId + '"] [data-teacher-id="' + teacherId + '"]').forEach(function (chip) {
+                chip.remove();
+            });
+
+            setTeacherOptionState(subjectId, teacherId, false);
+            refreshSubjectGroupingMeta(subjectId);
+            applyGrouping();
         });
     }
 
@@ -323,6 +960,15 @@
         new bootstrap.Modal(document.getElementById('addClassModal')).show();
     }
 
+    function buildClassChip(subjectId, classId, className) {
+        var chip = document.createElement('span');
+        chip.className = 'badge bg-success-subtle text-success border border-success-subtle d-flex align-items-center gap-1 class-chip';
+        chip.setAttribute('data-class-id', classId);
+        chip.innerHTML = className +
+            ' <button type="button" class="btn-close btn-close-sm" style="font-size:8px" onclick="removeClassChip(this,' + subjectId + ',' + classId + ')"></button>';
+        return chip;
+    }
+
     function confirmAddClass() {
         var classId = parseInt(document.getElementById('modalClassSelect').value);
         fetch('@Url.Action("AddClassToSubject", "Admin")', {
@@ -330,16 +976,20 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ subjectId: _modalSubjectId, classId: classId })
         }).then(function (r) { return r.json(); }).then(function (data) {
-            if (data.success) {
-                var container = document.querySelector('[data-subject="' + _modalSubjectId + '"]');
+            if (!data.success) return;
+
+            document.querySelectorAll('.chips-container[data-subject="' + _modalSubjectId + '"]').forEach(function (container) {
+                if (container.querySelector('[data-class-id="' + classId + '"]')) return;
+
                 var addBtn = container.querySelector('button:last-child');
-                var chip = document.createElement('span');
-                chip.className = 'badge bg-success-subtle text-success border border-success-subtle d-flex align-items-center gap-1 class-chip';
-                chip.innerHTML = data.className +
-                    ' <button type="button" class="btn-close btn-close-sm" style="font-size:8px" onclick="removeClassChip(this,' + _modalSubjectId + ',' + classId + ')"></button>';
+                var chip = buildClassChip(_modalSubjectId, classId, data.className);
                 container.insertBefore(chip, addBtn);
-                bootstrap.Modal.getInstance(document.getElementById('addClassModal')).hide();
-            }
+            });
+
+            refreshSubjectGroupingMeta(_modalSubjectId);
+            applyGrouping();
+
+            bootstrap.Modal.getInstance(document.getElementById('addClassModal')).hide();
         });
     }
 
@@ -349,9 +999,14 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ subjectId: subjectId, classId: classId })
         }).then(function (r) { return r.json(); }).then(function (data) {
-            if (data.success) {
-                btn.closest('.class-chip').remove();
-            }
+            if (!data.success) return;
+
+            document.querySelectorAll('.chips-container[data-subject="' + subjectId + '"] [data-class-id="' + classId + '"]').forEach(function (chip) {
+                chip.remove();
+            });
+
+            refreshSubjectGroupingMeta(subjectId);
+            applyGrouping();
         });
     }
 
@@ -364,11 +1019,8 @@
             '<div class="col"><input type="text" class="form-control form-control-sm bulk-name" placeholder="Назва предмету" /></div>' +
             '<div class="col-auto" style="width:220px"><select class="form-select form-select-sm bulk-teacher">' +
             '<option value="">— вчитель —</option>' +
-            @foreach (var t in teachers!)
-            {
-                @:'<option value="@t.Id">@t.Surname @t.Name</option>' +
-            }
-            '""</select></div>' +
+            _teacherOptionsHtml +
+            '</select></div>' +
             '<div class="col-auto"><button class="btn btn-sm btn-outline-danger" onclick="this.closest(\'.bulk-row\').remove()"><i class="bi bi-x-lg"></i></button></div>';
         container.appendChild(row);
         row.querySelector('input').focus();
@@ -383,7 +1035,11 @@
                 items.push({ name: name, teacherId: teacherId });
             }
         });
-        if (items.length === 0) { alert('Заповніть хоча б один рядок'); return; }
+
+        if (items.length === 0) {
+            alert('Заповніть хоча б один рядок');
+            return;
+        }
 
         fetch('@Url.Action("BulkCreateSubjects", "Admin")', {
             method: 'POST',
@@ -451,5 +1107,19 @@
         document.getElementById('importPreview').style.display = 'none';
         document.getElementById('importBar').style.display = 'flex';
     }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var initialMode = getInitialViewMode();
+        setSubjectsView(initialMode);
+
+        document.querySelectorAll('.subject-row, .subject-card-item').forEach(function (item) {
+            var subjectId = parseInt(item.dataset.subjectId || '0');
+            if (subjectId > 0) {
+                refreshSubjectGroupingMeta(subjectId);
+            }
+        });
+
+        applyGrouping();
+    });
 </script>
 }

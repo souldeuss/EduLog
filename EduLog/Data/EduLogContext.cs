@@ -23,9 +23,14 @@ namespace EduLog.Data
         public DbSet<Absence> Absence { get; set; }
         public DbSet<Class> Class { get; set; }
         public DbSet<ClassSubject> ClassSubject { get; set; }
+        public DbSet<SubjectTeacher> SubjectTeacher { get; set; }
+        public DbSet<ClassTemplate> ClassTemplate { get; set; }
+        public DbSet<TemplateSubject> TemplateSubject { get; set; }
+        public DbSet<Room> Room { get; set; }
         public DbSet<Invitation> Invitation { get; set; }
         public DbSet<AcademicYear> AcademicYear { get; set; }
         public DbSet<ScheduleSlot> ScheduleSlot { get; set; }
+        public DbSet<SchoolEvent> SchoolEvent { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -44,6 +49,47 @@ namespace EduLog.Data
                 .HasOne(cs => cs.Subject)
                 .WithMany(s => s.ClassSubjects)
                 .HasForeignKey(cs => cs.SubjectId);
+
+            modelBuilder.Entity<SubjectTeacher>()
+                .HasKey(st => new { st.SubjectId, st.TeacherId });
+
+            modelBuilder.Entity<SubjectTeacher>()
+                .HasOne(st => st.Subject)
+                .WithMany(s => s.SubjectTeachers)
+                .HasForeignKey(st => st.SubjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<SubjectTeacher>()
+                .HasOne(st => st.Teacher)
+                .WithMany(t => t.SubjectTeachers)
+                .HasForeignKey(st => st.TeacherId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Subject>()
+                .HasOne(s => s.DefaultRoom)
+                .WithMany(r => r.ProfileSubjects)
+                .HasForeignKey(s => s.DefaultRoomId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<TemplateSubject>()
+                .HasKey(ts => new { ts.TemplateId, ts.SubjectId });
+
+            modelBuilder.Entity<TemplateSubject>()
+                .HasOne(ts => ts.Template)
+                .WithMany(t => t.TemplateSubjects)
+                .HasForeignKey(ts => ts.TemplateId);
+
+            modelBuilder.Entity<TemplateSubject>()
+                .HasOne(ts => ts.Subject)
+                .WithMany()
+                .HasForeignKey(ts => ts.SubjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Class>()
+                .HasOne(c => c.Room)
+                .WithMany(r => r.Classes)
+                .HasForeignKey(c => c.RoomId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // ScheduleSlot FK — restrict delete to avoid cascade cycles
             modelBuilder.Entity<ScheduleSlot>()
@@ -70,11 +116,19 @@ namespace EduLog.Data
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
             modelBuilder.Entity<ClassSubject>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<SubjectTeacher>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<ClassTemplate>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<Room>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
             modelBuilder.Entity<Invitation>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
             modelBuilder.Entity<AcademicYear>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
             modelBuilder.Entity<ScheduleSlot>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<SchoolEvent>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
         }
 
