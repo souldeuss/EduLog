@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using EduLog.Data;
 using EduLog.Models;
 using EduLog.Services;
+using Microsoft.Extensions.Options;
+using Polly;
 
 // Find the project root directory by walking up from bin folder
 string contentRootPath = AppContext.BaseDirectory;
@@ -30,12 +32,13 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+builder.Services.AddMemoryCache();
 
-// Додаємо контекст бази даних
+// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 builder.Services.AddDbContext<EduLogContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Налаштування Identity
+// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
     options.Password.RequireDigit = false;
@@ -51,6 +54,25 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantService, TenantService>();
 builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, CustomClaimsPrincipalFactory>();
+builder.Services.Configure<SchedulerApiOptions>(builder.Configuration.GetSection(SchedulerApiOptions.SectionName));
+builder.Services.AddHttpClient<ISchedulerService, SchedulerService>((serviceProvider, client) =>
+{
+    var schedulerOptions = serviceProvider.GetRequiredService<IOptions<SchedulerApiOptions>>().Value;
+    client.BaseAddress = new Uri(schedulerOptions.BaseUrl ?? "http://localhost:5001");
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(1, schedulerOptions.TimeoutSeconds));
+})
+.AddPolicyHandler((serviceProvider, _) =>
+{
+    var schedulerOptions = serviceProvider.GetRequiredService<IOptions<SchedulerApiOptions>>().Value;
+    var retryCount = Math.Max(1, schedulerOptions.RetryCount);
+
+    return Policy<HttpResponseMessage>
+        .Handle<HttpRequestException>()
+        .OrResult(response => !response.IsSuccessStatusCode)
+        .WaitAndRetryAsync(
+            retryCount,
+            attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+});
 builder.Services.ConfigureApplicationCookie(options =>
 {
     options.LoginPath = "/Account/Login";

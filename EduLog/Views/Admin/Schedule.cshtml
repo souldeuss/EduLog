@@ -9,14 +9,181 @@
     var conflicts = ViewData["Conflicts"] as Dictionary<int, List<string>> ?? new();
     var teachersList = ViewData["Teachers"] as Microsoft.AspNetCore.Mvc.Rendering.SelectList;
     var subjectsList = ViewData["Subjects"] as Microsoft.AspNetCore.Mvc.Rendering.SelectList;
+    var schedulerModes = ViewData["SchedulerModes"] as List<EduLog.Services.SchedulerModeInfo> ?? new();
+    var schedulerOptions = ViewData["SchedulerConfig"] as EduLog.Services.SchedulerConfigOptions ?? new();
+    var lockedSlotIds = (ViewData["LockedSlotIds"] as IEnumerable<int>)?.ToHashSet() ?? new HashSet<int>();
 
     var error = TempData["Error"] as string;
+    var success = TempData["Success"] as string;
     string[] dayNames = { "Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця" };
+    string[] dayIcons = { "bi-calendar2-week", "bi-calendar2-check", "bi-calendar2-day", "bi-calendar2-event", "bi-calendar2-heart" };
+    var slotsPerDay = Enumerable.Range(1, 5)
+        .Select(day => slots.Count(s => s.DayOfWeek == day))
+        .ToArray();
+    var maxDaySlots = Math.Max(1, slotsPerDay.Max());
 }
+
+<style>
+    .schedule-toolbar {
+        position: sticky;
+        top: .75rem;
+        z-index: 15;
+        background: var(--bs-body-bg);
+        border: 1px solid var(--bs-border-color);
+        border-radius: 1rem;
+        padding: 1rem;
+    }
+
+    .toolbar-separator {
+        width: 1px;
+        height: 2.25rem;
+        background: var(--bs-border-color);
+    }
+
+    .schedule-board {
+        position: relative;
+        border-radius: 1rem;
+        overflow: hidden;
+        border: 1px solid var(--bs-border-color);
+    }
+
+    .schedule-board table {
+        margin-bottom: 0;
+        table-layout: fixed;
+    }
+
+    .schedule-board th,
+    .schedule-board td {
+        vertical-align: top;
+    }
+
+    .drop-zone {
+        min-height: 116px;
+        background: var(--bs-light-bg-subtle);
+        border: 2px dashed transparent;
+        border-radius: .75rem;
+        padding: .5rem;
+        transition: all .2s ease;
+    }
+
+    .drop-zone.drop-highlight {
+        border-color: #86b7fe;
+        background: #eff6ff;
+    }
+
+    .drop-zone.shake {
+        animation: shake .35s ease-in-out;
+    }
+
+    @@keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-4px); }
+        40% { transform: translateX(4px); }
+        60% { transform: translateX(-4px); }
+        80% { transform: translateX(4px); }
+    }
+
+    .add-slot-btn {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        padding: 0;
+        line-height: 1;
+    }
+
+    .lesson-card {
+        border-radius: .75rem;
+        padding: .5rem .5rem .5rem .4rem;
+        border: 1px solid rgba(0, 0, 0, .08);
+        background: hsl(var(--subject-hue, 200) 75% 92%);
+        cursor: grab;
+        position: relative;
+    }
+
+    .lesson-card:active {
+        cursor: grabbing;
+    }
+
+    .lesson-card.is-locked {
+        cursor: not-allowed;
+        opacity: .7;
+    }
+
+    .lesson-card.is-conflict {
+        border: 2px solid #dc3545;
+    }
+
+    .lesson-card-subject {
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 150px;
+    }
+
+    .drag-handle {
+        cursor: grab;
+        color: var(--bs-secondary-color);
+        width: 16px;
+    }
+
+    .card-actions {
+        opacity: 0;
+        transition: opacity .15s ease;
+    }
+
+    .lesson-card:hover .card-actions {
+        opacity: 1;
+    }
+
+    .board-loading {
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 255, 255, .65);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 5;
+        backdrop-filter: blur(2px);
+    }
+
+    .board-loading.active {
+        display: flex;
+    }
+
+    .stats-day {
+        display: grid;
+        grid-template-columns: 100px 1fr 38px;
+        align-items: center;
+        gap: .5rem;
+        margin-bottom: .45rem;
+    }
+
+    .stats-bar {
+        height: 8px;
+        border-radius: 999px;
+        background: #e9ecef;
+        overflow: hidden;
+    }
+
+    .stats-bar > span {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, #0d6efd, #20c997);
+    }
+</style>
 
 <partial name="_AdminNav" />
 
-<h2 class="mb-4">Розклад</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Розклад</h2>
+    <button class="btn btn-outline-secondary position-relative" type="button" data-bs-toggle="offcanvas" data-bs-target="#scheduleSidePanel">
+        <i class="bi bi-layout-sidebar-inset"></i> Панель
+        <span id="conflictBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger @(conflicts.Any() ? "" : "d-none")">
+            @conflicts.Count
+        </span>
+    </button>
+</div>
 
 @if (!string.IsNullOrEmpty(error))
 {
@@ -26,20 +193,27 @@
     </div>
 }
 
-<form method="get" asp-action="Schedule" class="d-flex gap-3 mb-4 flex-wrap align-items-end">
+@if (!string.IsNullOrEmpty(success))
+{
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="bi bi-check-circle"></i> @success
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<form id="scheduleFilterForm" method="get" asp-action="Schedule" class="schedule-toolbar d-flex flex-wrap align-items-end gap-3 mb-4">
     <div>
-        <label class="form-label">Навчальний рік</label>
+        <label class="form-label small text-muted mb-1">Навчальний рік</label>
         <select name="yearId" class="form-select" onchange="this.form.submit()">
             @foreach (var y in years)
             {
-                <option value="@y.Id" selected="@(selectedYear?.Id == y.Id)">
-                    @y.Name @(y.IsCurrent ? "★" : "")
-                </option>
+                <option value="@y.Id" selected="@(selectedYear?.Id == y.Id)">@y.Name @(y.IsCurrent ? "★" : "")</option>
             }
         </select>
     </div>
+
     <div>
-        <label class="form-label">Клас</label>
+        <label class="form-label small text-muted mb-1">Клас</label>
         <select name="classId" class="form-select" onchange="this.form.submit()">
             @foreach (var c in classes)
             {
@@ -47,6 +221,37 @@
             }
         </select>
     </div>
+
+    <div class="toolbar-separator d-none d-lg-block"></div>
+
+    <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#generateModal" @(selectedYear == null || selectedClass == null ? "disabled" : null)>
+        <i class="bi bi-stars"></i> Згенерувати розклад
+    </button>
+
+    <button id="saveChangesBtn" class="btn btn-primary d-none" type="button">
+        <i class="bi bi-floppy"></i> Зберегти зміни
+    </button>
+
+    <div class="dropdown">
+        <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" @(selectedYear == null ? "disabled" : null)>
+            Експорт
+        </button>
+        <ul class="dropdown-menu">
+            @if (selectedYear != null)
+            {
+                <li><a class="dropdown-item" href="@Url.Action("ExportSchedule", "Admin", new { yearId = selectedYear.Id, format = "json" })">JSON</a></li>
+                <li><a class="dropdown-item" href="@Url.Action("ExportSchedule", "Admin", new { yearId = selectedYear.Id, format = "csv" })">CSV</a></li>
+            }
+        </ul>
+    </div>
+
+    <button id="importBtn" class="btn btn-outline-primary" type="button" @(selectedYear == null ? "disabled" : null)>
+        <i class="bi bi-upload"></i> Імпорт
+    </button>
+
+    <button id="discardChangesBtn" class="btn btn-danger d-none" type="button">
+        <i class="bi bi-x-circle"></i> Скасувати всі зміни
+    </button>
 </form>
 
 @if (selectedYear == null || selectedClass == null)
@@ -55,97 +260,249 @@
 }
 else
 {
-    <div class="table-responsive">
-        <table class="table table-bordered text-center align-middle">
-            <thead class="table-light">
-                <tr>
-                    <th style="width:60px">Урок</th>
-                    @for (int d = 1; d <= 5; d++)
-                    {
-                        <th>@dayNames[d - 1]</th>
-                    }
-                </tr>
-            </thead>
-            <tbody>
-                @for (int lesson = 1; lesson <= 8; lesson++)
-                {
+    <div class="schedule-board shadow-sm mb-4" id="scheduleBoard">
+        <div class="board-loading" id="boardLoading">
+            <div class="text-center">
+                <div class="spinner-border text-primary" role="status"></div>
+                <div class="mt-2 fw-semibold">Генеруємо розклад...</div>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead class="table-light">
                     <tr>
-                        <td><strong>@lesson</strong></td>
-                        @for (int day = 1; day <= 5; day++)
+                        <th style="width:78px">Урок</th>
+                        @for (int d = 1; d <= 5; d++)
                         {
-                            var slot = slots.FirstOrDefault(s => s.DayOfWeek == day && s.LessonNumber == lesson);
-                            var hasConflict = slot != null && conflicts.ContainsKey(slot.Id);
-                            var conflictText = hasConflict ? string.Join("\n", conflicts[slot!.Id]) : "";
-
-                            <td class="@(hasConflict ? "table-danger" : "")"
-                                style="min-width:180px; cursor:pointer"
-                                data-bs-toggle="modal"
-                                data-bs-target="#slotModal"
-                                onclick="openSlot(@day, @lesson, @(slot?.Id ?? 0), @(slot?.SubjectId ?? 0), @(slot?.TeacherId ?? 0), '@(slot?.Room ?? "")')">
-                                @if (slot != null)
-                                {
-                                    <div>
-                                        <strong>@slot.Subject?.Name</strong><br />
-                                        <small class="text-muted">@slot.Teacher?.Surname</small>
-                                        @if (!string.IsNullOrEmpty(slot.Room))
+                            <th>
+                                <i class="bi @dayIcons[d - 1] text-primary"></i>
+                                @dayNames[d - 1]
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                <tbody id="scheduleBody">
+                    @for (int lesson = 1; lesson <= 8; lesson++)
+                    {
+                        <tr>
+                            <td class="fw-semibold text-center">@lesson</td>
+                            @for (int day = 1; day <= 5; day++)
+                            {
+                                var slot = slots.FirstOrDefault(s => s.DayOfWeek == day && s.LessonNumber == lesson);
+                                var hasConflict = slot != null && conflicts.ContainsKey(slot.Id);
+                                var conflictText = hasConflict ? string.Join(" | ", conflicts[slot!.Id]) : string.Empty;
+                                var isLocked = slot != null && lockedSlotIds.Contains(slot.Id);
+                                <td>
+                                    <div class="drop-zone"
+                                         data-day="@day"
+                                         data-lesson="@lesson"
+                                         data-slot-id="@(slot?.Id ?? 0)">
+                                        @if (slot != null)
                                         {
-                                            <br /><small>каб. @slot.Room</small>
+                                            <div class="lesson-card @(hasConflict ? "is-conflict" : "") @(isLocked ? "is-locked" : "")"
+                                                 draggable="@(isLocked ? "false" : "true")"
+                                                 data-slot-id="@slot.Id"
+                                                 data-day="@slot.DayOfWeek"
+                                                 data-lesson="@slot.LessonNumber"
+                                                 data-subject-id="@slot.SubjectId"
+                                                 data-teacher-id="@slot.TeacherId"
+                                                 data-subject-name="@slot.Subject?.Name"
+                                                 data-teacher-name="@slot.Teacher?.Surname"
+                                                 data-room="@slot.Room"
+                                                 data-conflict="@(hasConflict ? "1" : "0")"
+                                                 data-locked="@(isLocked ? "1" : "0")"
+                                                 title="@conflictText">
+                                                <div class="d-flex align-items-start gap-2">
+                                                    <span class="drag-handle">≡</span>
+                                                    <div class="flex-grow-1 overflow-hidden">
+                                                        <div class="lesson-card-subject">@slot.Subject?.Name</div>
+                                                        <div class="small text-muted">@slot.Teacher?.Surname</div>
+                                                        @if (!string.IsNullOrWhiteSpace(slot.Room))
+                                                        {
+                                                            <div class="small text-muted">каб. @slot.Room</div>
+                                                        }
+                                                    </div>
+                                                    <div class="d-flex flex-column align-items-end">
+                                                        @if (isLocked)
+                                                        {
+                                                            <span title="Locked">🔒</span>
+                                                        }
+                                                        @if (hasConflict)
+                                                        {
+                                                            <span title="Конфлікт">⚠️</span>
+                                                        }
+                                                    </div>
+                                                </div>
+                                                <div class="card-actions d-flex justify-content-end gap-1 mt-2">
+                                                    <button type="button" class="btn btn-sm btn-light border edit-slot-btn">✏️ Редагувати</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-slot-btn">🗑️ Видалити</button>
+                                                </div>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-secondary add-slot-btn">+</button>
                                         }
                                     </div>
-                                    @if (hasConflict)
-                                    {
-                                        <div class="mt-1">
-                                            <i class="bi bi-exclamation-triangle text-danger" title="@conflictText"></i>
-                                            <small class="text-danger">Конфлікт</small>
-                                        </div>
-                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<form id="importForm" asp-action="ImportSchedule" method="post" enctype="multipart/form-data" class="d-none">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="yearId" value="@(selectedYear?.Id ?? 0)" />
+    <input id="importFileInput" type="file" name="file" accept=".json,.csv" />
+</form>
+
+<div class="offcanvas offcanvas-end" tabindex="-1" id="scheduleSidePanel">
+    <div class="offcanvas-header border-bottom">
+        <h5 class="offcanvas-title">Аналітика розкладу</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body">
+        <div class="mb-4">
+            <h6 class="d-flex align-items-center gap-2">
+                <span>⚠️ Конфлікти</span>
+                <span class="badge text-bg-danger" id="sideConflictCount">@conflicts.Count</span>
+            </h6>
+            @if (conflicts.Any())
+            {
+                <ul class="small ps-3 mb-0">
+                    @foreach (var kv in conflicts)
+                    {
+                        var conflictSlot = slots.FirstOrDefault(s => s.Id == kv.Key);
+                        foreach (var msg in kv.Value)
+                        {
+                            <li class="mb-2">
+                                @if (conflictSlot != null)
+                                {
+                                    <strong>@dayNames[conflictSlot.DayOfWeek - 1], урок @conflictSlot.LessonNumber:</strong> @msg
                                 }
                                 else
                                 {
-                                    <span class="text-muted">+</span>
+                                    @msg
                                 }
-                            </td>
+                            </li>
                         }
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-
-    @* Conflict Legend *@
-    @if (conflicts.Any())
-    {
-        <div class="alert alert-danger mt-3">
-            <h6><i class="bi bi-exclamation-triangle"></i> Конфлікти розкладу:</h6>
-            <ul class="mb-0">
-                @foreach (var kv in conflicts)
-                {
-                    var conflictSlot = slots.FirstOrDefault(s => s.Id == kv.Key);
-                    @foreach (var msg in kv.Value)
-                    {
-                        <li>
-                            @if (conflictSlot != null)
-                            {
-                                <strong>@dayNames[conflictSlot.DayOfWeek - 1], урок @conflictSlot.LessonNumber</strong>@: @msg
-                            }
-                            else
-                            {
-                                @msg
-                            }
-                        </li>
                     }
-                }
-            </ul>
+                </ul>
+            }
+            else
+            {
+                <p class="text-muted small mb-0">Конфліктів не знайдено.</p>
+            }
         </div>
-    }
 
-    @* Modal for adding/editing slot *@
+        <div>
+            <h6 class="mb-3">Статистика по днях</h6>
+            <div id="statsContainer">
+                @for (int d = 1; d <= 5; d++)
+                {
+                    var value = slotsPerDay[d - 1];
+                    var widthPercent = (int)Math.Round(value * 100.0 / maxDaySlots);
+                    <div class="stats-day" data-day="@d">
+                        <span class="small">@dayNames[d - 1]</span>
+                        <div class="stats-bar"><span style="width:@widthPercent%"></span></div>
+                        <span class="small text-end day-count">@value</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="generateModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <form id="generateForm" asp-action="GenerateAiSchedule" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="yearId" value="@(selectedYear?.Id ?? 0)" />
+                <input type="hidden" name="classId" value="@(selectedClass?.Id ?? 0)" />
+                <input type="hidden" name="options.PlanningPeriodWeeks" value="@schedulerOptions.PlanningPeriodWeeks" />
+                <input type="hidden" name="options.MaxDuplicatesPerDay" value="@schedulerOptions.MaxDuplicatesPerDay" />
+
+                <div class="modal-header">
+                    <h5 class="modal-title">Генерація розкладу</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex flex-column gap-2 mb-3">
+                        @foreach (var mode in schedulerModes)
+                        {
+                            var icon = mode.Mode switch
+                            {
+                                EduLog.Services.SchedulerMode.Balanced => "⚖️",
+                                EduLog.Services.SchedulerMode.Dense => "⚡",
+                                EduLog.Services.SchedulerMode.Append => "🧩",
+                                _ => "✨"
+                            };
+                            <label class="border rounded p-3">
+                                <input class="form-check-input me-2" type="radio" name="mode" value="@mode.Mode" @(mode == schedulerModes.FirstOrDefault() ? "checked" : null) />
+                                <strong>@icon @mode.Name</strong>
+                                <div class="small text-muted mt-1">@mode.Description</div>
+                            </label>
+                        }
+                    </div>
+
+                    <div class="accordion" id="generateAdvancedAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="advancedSettingsHeading">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#advancedSettingsCollapse">
+                                    Додаткові налаштування
+                                </button>
+                            </h2>
+                            <div id="advancedSettingsCollapse" class="accordion-collapse collapse" data-bs-parent="#generateAdvancedAccordion">
+                                <div class="accordion-body">
+                                    <label class="form-label d-flex justify-content-between">
+                                        <span>Макс. уроків за день</span>
+                                        <span id="maxLessonsValue">@schedulerOptions.MaxLessonsPerDay</span>
+                                    </label>
+                                    <input id="maxLessonsRange" class="form-range" type="range" min="3" max="8" name="options.MaxLessonsPerDay" value="@Math.Clamp(schedulerOptions.MaxLessonsPerDay, 3, 8)" />
+
+                                    <div class="form-check form-switch mt-3">
+                                        <input class="form-check-input" type="checkbox" id="allowDuplicatesSwitch" name="options.AllowDuplicates" value="true" @(schedulerOptions.AllowDuplicates ? "checked" : null) />
+                                        <label class="form-check-label" for="allowDuplicatesSwitch">Дозволити повтори предмету в день</label>
+                                    </div>
+
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input" type="checkbox" id="allowGapsSwitch" name="options.AllowGaps" value="true" @(schedulerOptions.AllowGaps ? "checked" : null) />
+                                        <label class="form-check-label" for="allowGapsSwitch">Дозволити вікна</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="generateProgressWrap" class="mt-4 d-none">
+                        <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+                            <div id="generateProgress" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%">0%</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button id="generateSubmitBtn" type="submit" class="btn btn-success">Згенерувати</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@if (selectedYear != null && selectedClass != null)
+{
     <div class="modal fade" id="slotModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form asp-action="SaveSlot" method="post">
-                    <input type="hidden" name="yearId" value="@selectedYear.Id" />
-                    <input type="hidden" name="classId" value="@selectedClass.Id" />
+                <form id="slotForm" asp-action="SaveSlot" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="yearId" id="modalYearId" value="@selectedYear.Id" />
+                    <input type="hidden" name="classId" id="modalClassId" value="@selectedClass.Id" />
                     <input type="hidden" name="slotId" id="modalSlotId" />
                     <input type="hidden" name="dayOfWeek" id="modalDay" />
                     <input type="hidden" name="lessonNumber" id="modalLesson" />
@@ -163,41 +520,602 @@ else
                             <label class="form-label">Вчитель</label>
                             <select name="teacherId" id="modalTeacher" class="form-select" asp-items="@teachersList" required></select>
                         </div>
-                        <div class="mb-3">
+                        <div>
                             <label class="form-label">Кабінет</label>
                             <input name="room" id="modalRoom" class="form-control" maxlength="20" />
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                        <button id="modalDeleteBtn" type="button" class="btn btn-outline-danger d-none">Видалити</button>
                         <button type="submit" class="btn btn-primary">Зберегти</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-
-    @* Delete form (used via JS) *@
-    <form id="deleteSlotForm" asp-action="DeleteSlot" method="post" style="display:none">
-        <input type="hidden" name="id" id="deleteSlotId" />
-        <input type="hidden" name="yearId" value="@selectedYear.Id" />
-        <input type="hidden" name="classId" value="@selectedClass.Id" />
-    </form>
 }
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="scheduleToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <strong class="me-auto">Розклад</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body" id="scheduleToastBody"></div>
+    </div>
+</div>
 
 @section Scripts {
     <script>
-        var dayNames = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця"];
+        const DRAFT_KEY = 'schedule_draft';
+        const dayNames = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця"];
+        const saveChangesBtn = document.getElementById('saveChangesBtn');
+        const discardChangesBtn = document.getElementById('discardChangesBtn');
+        const conflictBadge = document.getElementById('conflictBadge');
+        const sideConflictCount = document.getElementById('sideConflictCount');
+        const board = document.getElementById('scheduleBoard');
+        const scheduleBody = document.getElementById('scheduleBody');
+        const boardLoading = document.getElementById('boardLoading');
+        const scheduleToast = document.getElementById('scheduleToast');
+        const toastBody = document.getElementById('scheduleToastBody');
+        const importBtn = document.getElementById('importBtn');
+        const importFileInput = document.getElementById('importFileInput');
+        const importForm = document.getElementById('importForm');
+        const generateForm = document.getElementById('generateForm');
+        const generateProgressWrap = document.getElementById('generateProgressWrap');
+        const generateProgress = document.getElementById('generateProgress');
+        const maxLessonsRange = document.getElementById('maxLessonsRange');
+        const maxLessonsValue = document.getElementById('maxLessonsValue');
+        const slotForm = document.getElementById('slotForm');
+        const modalDeleteBtn = document.getElementById('modalDeleteBtn');
+        const slotModalEl = document.getElementById('slotModal');
 
-        function openSlot(day, lesson, slotId, subjectId, teacherId, room) {
+        let unsavedChanges = false;
+        let activeDraggedCard = null;
+        let activeEditCard = null;
+
+        function getAntiForgeryToken() {
+            return document.querySelector('#slotForm input[name="__RequestVerificationToken"]')?.value
+                || document.querySelector('#generateForm input[name="__RequestVerificationToken"]')?.value
+                || document.querySelector('#importForm input[name="__RequestVerificationToken"]')?.value
+                || '';
+        }
+
+        function showToast(message, isError = false) {
+            if (!scheduleToast || !toastBody) {
+                return;
+            }
+
+            toastBody.textContent = message;
+            scheduleToast.classList.toggle('text-bg-danger', isError);
+            scheduleToast.classList.toggle('text-bg-success', !isError);
+            const toast = bootstrap.Toast.getOrCreateInstance(scheduleToast);
+            toast.show();
+        }
+
+        function generateSubjectColor(subjectName) {
+            if (!subjectName) return 'hsl(200 75% 92%)';
+            let hash = 0;
+            for (let i = 0; i < subjectName.length; i++) {
+                hash = subjectName.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const hue = Math.abs(hash) % 360;
+            return `hsl(${hue} 75% 92%)`;
+        }
+
+        function renderConflictBadge(count) {
+            if (conflictBadge) {
+                conflictBadge.textContent = count;
+                conflictBadge.classList.toggle('d-none', count <= 0);
+            }
+
+            if (sideConflictCount) {
+                sideConflictCount.textContent = count;
+            }
+        }
+
+        function loadDraft() {
+            try {
+                return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{"hasChanges":false,"events":[]}');
+            } catch {
+                return { hasChanges: false, events: [] };
+            }
+        }
+
+        function saveDraft(draft) {
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        }
+
+        function markUnsavedChanges(value = true) {
+            unsavedChanges = value;
+            if (saveChangesBtn) saveChangesBtn.classList.toggle('d-none', !value);
+            if (discardChangesBtn) discardChangesBtn.classList.toggle('d-none', !value);
+
+            const draft = loadDraft();
+            draft.hasChanges = value;
+            draft.updatedAt = new Date().toISOString();
+            saveDraft(draft);
+        }
+
+        function registerDraftEvent(eventData) {
+            const draft = loadDraft();
+            draft.events = Array.isArray(draft.events) ? draft.events : [];
+            draft.events.push({ ...eventData, timestamp: new Date().toISOString() });
+            draft.hasChanges = true;
+            saveDraft(draft);
+            markUnsavedChanges(true);
+        }
+
+        function clearDraft() {
+            localStorage.removeItem(DRAFT_KEY);
+            markUnsavedChanges(false);
+        }
+
+        function updateStats() {
+            const dayCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+            document.querySelectorAll('.lesson-card').forEach(card => {
+                const day = Number(card.dataset.day || 0);
+                if (dayCounts[day] !== undefined) {
+                    dayCounts[day] += 1;
+                }
+            });
+
+            const max = Math.max(1, ...Object.values(dayCounts));
+            document.querySelectorAll('.stats-day').forEach(row => {
+                const day = Number(row.dataset.day || 0);
+                const count = dayCounts[day] || 0;
+                const fill = row.querySelector('.stats-bar > span');
+                const label = row.querySelector('.day-count');
+                if (fill) fill.style.width = `${Math.round(count * 100 / max)}%`;
+                if (label) label.textContent = count;
+            });
+        }
+
+        function initLessonCard(card) {
+            if (!card) return;
+            card.style.background = generateSubjectColor(card.dataset.subjectName || '');
+            card.style.setProperty('--subject-hue', '200');
+        }
+
+        function buildCard(slotData, hasConflict = false, isLocked = false) {
+            const card = document.createElement('div');
+            card.className = `lesson-card ${hasConflict ? 'is-conflict' : ''} ${isLocked ? 'is-locked' : ''}`;
+            card.draggable = !isLocked;
+            card.dataset.slotId = slotData.slotId;
+            card.dataset.day = slotData.dayOfWeek;
+            card.dataset.lesson = slotData.lessonNumber;
+            card.dataset.subjectId = slotData.subjectId;
+            card.dataset.teacherId = slotData.teacherId;
+            card.dataset.subjectName = slotData.subjectName || '';
+            card.dataset.teacherName = slotData.teacherName || '';
+            card.dataset.room = slotData.room || '';
+            card.dataset.locked = isLocked ? '1' : '0';
+            card.dataset.conflict = hasConflict ? '1' : '0';
+
+            card.innerHTML = `
+                <div class="d-flex align-items-start gap-2">
+                    <span class="drag-handle">≡</span>
+                    <div class="flex-grow-1 overflow-hidden">
+                        <div class="lesson-card-subject"></div>
+                        <div class="small text-muted teacher-label"></div>
+                        <div class="small text-muted room-label"></div>
+                    </div>
+                    <div class="d-flex flex-column align-items-end status-icons"></div>
+                </div>
+                <div class="card-actions d-flex justify-content-end gap-1 mt-2">
+                    <button type="button" class="btn btn-sm btn-light border edit-slot-btn">✏️ Редагувати</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger delete-slot-btn">🗑️ Видалити</button>
+                </div>
+            `;
+
+            card.querySelector('.lesson-card-subject').textContent = slotData.subjectName || '';
+            card.querySelector('.teacher-label').textContent = slotData.teacherName || '';
+            const roomLabel = card.querySelector('.room-label');
+            roomLabel.textContent = slotData.room ? `каб. ${slotData.room}` : '';
+
+            const statusIcons = card.querySelector('.status-icons');
+            if (isLocked) statusIcons.insertAdjacentHTML('beforeend', '<span title="Locked">🔒</span>');
+            if (hasConflict) statusIcons.insertAdjacentHTML('beforeend', '<span title="Конфлікт">⚠️</span>');
+
+            initLessonCard(card);
+            return card;
+        }
+
+        async function saveSlotRequest(payload) {
+            const formData = new FormData();
+            formData.append('__RequestVerificationToken', getAntiForgeryToken());
+            Object.entries(payload).forEach(([k, v]) => formData.append(k, v ?? ''));
+
+            const response = await fetch('@Url.Action("SaveSlot", "Admin")', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: formData
+            });
+
+            if (!response.ok) {
+                let message = 'Помилка збереження.';
+                try {
+                    const errorPayload = await response.json();
+                    message = errorPayload.message || message;
+                } catch {
+                    // ignored
+                }
+                throw new Error(message);
+            }
+
+            return response.json();
+        }
+
+        async function deleteSlotRequest(slotId) {
+            const formData = new FormData();
+            formData.append('__RequestVerificationToken', getAntiForgeryToken());
+            formData.append('id', slotId);
+            formData.append('yearId', '@(selectedYear?.Id ?? 0)');
+            formData.append('classId', '@(selectedClass?.Id ?? 0)');
+
+            const response = await fetch('@Url.Action("DeleteSlot", "Admin")', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error('Помилка видалення слоту.');
+            }
+
+            return response.json();
+        }
+
+        function updateCellButton(zone) {
+            if (!zone) return;
+            const hasCard = !!zone.querySelector('.lesson-card');
+            let plusBtn = zone.querySelector('.add-slot-btn');
+
+            if (hasCard && plusBtn) {
+                plusBtn.remove();
+                return;
+            }
+
+            if (!hasCard && !plusBtn) {
+                plusBtn = document.createElement('button');
+                plusBtn.type = 'button';
+                plusBtn.className = 'btn btn-sm btn-outline-secondary add-slot-btn';
+                plusBtn.textContent = '+';
+                zone.appendChild(plusBtn);
+            }
+        }
+
+        function openSlot(day, lesson, slotId, subjectId, teacherId, room, card = null) {
+            const modal = bootstrap.Modal.getOrCreateInstance(slotModalEl);
             document.getElementById('modalSlotId').value = slotId || '';
             document.getElementById('modalDay').value = day;
             document.getElementById('modalLesson').value = lesson;
             document.getElementById('modalSubject').value = subjectId || '';
             document.getElementById('modalTeacher').value = teacherId || '';
             document.getElementById('modalRoom').value = room || '';
-            document.getElementById('modalTitle').textContent =
-                dayNames[day - 1] + ', урок ' + lesson + (slotId ? ' (редагування)' : ' (новий)');
+            document.getElementById('modalTitle').textContent = `${dayNames[day - 1]}, урок ${lesson}${slotId ? ' (редагування)' : ' (новий)'}`;
+
+            if (modalDeleteBtn) {
+                modalDeleteBtn.classList.toggle('d-none', !slotId);
+            }
+
+            activeEditCard = card;
+            modal.show();
         }
+
+        function attachBoardEvents() {
+            if (!scheduleBody) return;
+
+            scheduleBody.addEventListener('click', async (event) => {
+                const addBtn = event.target.closest('.add-slot-btn');
+                if (addBtn) {
+                    const zone = addBtn.closest('.drop-zone');
+                    openSlot(Number(zone.dataset.day), Number(zone.dataset.lesson), 0, 0, 0, '', null);
+                    return;
+                }
+
+                const editBtn = event.target.closest('.edit-slot-btn');
+                if (editBtn) {
+                    const card = editBtn.closest('.lesson-card');
+                    openSlot(Number(card.dataset.day), Number(card.dataset.lesson), Number(card.dataset.slotId), Number(card.dataset.subjectId), Number(card.dataset.teacherId), card.dataset.room || '', card);
+                    return;
+                }
+
+                const deleteBtn = event.target.closest('.delete-slot-btn');
+                if (deleteBtn) {
+                    const card = deleteBtn.closest('.lesson-card');
+                    const slotId = Number(card?.dataset.slotId || 0);
+                    if (!slotId) return;
+
+                    if (!confirm('Видалити цей урок?')) {
+                        return;
+                    }
+
+                    try {
+                        await deleteSlotRequest(slotId);
+                        const zone = card.closest('.drop-zone');
+                        card.remove();
+                        updateCellButton(zone);
+                        registerDraftEvent({ type: 'delete', slotId });
+                        updateStats();
+                        showToast('Урок видалено.');
+                    } catch (error) {
+                        showToast(error.message, true);
+                    }
+                }
+            });
+
+            scheduleBody.addEventListener('dragstart', (event) => {
+                const card = event.target.closest('.lesson-card');
+                if (!card || card.dataset.locked === '1') {
+                    event.preventDefault();
+                    return;
+                }
+
+                activeDraggedCard = card;
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', card.dataset.slotId || '');
+            });
+
+            scheduleBody.addEventListener('dragend', () => {
+                activeDraggedCard = null;
+                document.querySelectorAll('.drop-zone').forEach(zone => zone.classList.remove('drop-highlight'));
+            });
+
+            scheduleBody.addEventListener('dragover', (event) => {
+                const zone = event.target.closest('.drop-zone');
+                if (!zone || !activeDraggedCard) return;
+                event.preventDefault();
+                zone.classList.add('drop-highlight');
+            });
+
+            scheduleBody.addEventListener('dragleave', (event) => {
+                const zone = event.target.closest('.drop-zone');
+                if (!zone) return;
+                zone.classList.remove('drop-highlight');
+            });
+
+            scheduleBody.addEventListener('drop', async (event) => {
+                const zone = event.target.closest('.drop-zone');
+                if (!zone || !activeDraggedCard) return;
+                event.preventDefault();
+                zone.classList.remove('drop-highlight');
+
+                const sourceZone = activeDraggedCard.closest('.drop-zone');
+                const targetDay = Number(zone.dataset.day);
+                const targetLesson = Number(zone.dataset.lesson);
+                const sourceDay = Number(activeDraggedCard.dataset.day);
+                const sourceLesson = Number(activeDraggedCard.dataset.lesson);
+
+                if (sourceDay === targetDay && sourceLesson === targetLesson) {
+                    return;
+                }
+
+                if (zone.querySelector('.lesson-card')) {
+                    zone.classList.add('shake');
+                    setTimeout(() => zone.classList.remove('shake'), 350);
+                    showToast('Ця клітинка вже зайнята.', true);
+                    return;
+                }
+
+                try {
+                    await saveSlotRequest({
+                        slotId: activeDraggedCard.dataset.slotId,
+                        yearId: '@(selectedYear?.Id ?? 0)',
+                        classId: '@(selectedClass?.Id ?? 0)',
+                        dayOfWeek: targetDay,
+                        lessonNumber: targetLesson,
+                        subjectId: activeDraggedCard.dataset.subjectId,
+                        teacherId: activeDraggedCard.dataset.teacherId,
+                        room: activeDraggedCard.dataset.room || ''
+                    });
+
+                    zone.appendChild(activeDraggedCard);
+                    activeDraggedCard.dataset.day = String(targetDay);
+                    activeDraggedCard.dataset.lesson = String(targetLesson);
+                    updateCellButton(zone);
+                    updateCellButton(sourceZone);
+
+                    registerDraftEvent({
+                        type: 'move',
+                        slotId: activeDraggedCard.dataset.slotId,
+                        from: { day: sourceDay, lesson: sourceLesson },
+                        to: { day: targetDay, lesson: targetLesson }
+                    });
+                    updateStats();
+                } catch (error) {
+                    zone.classList.add('shake');
+                    setTimeout(() => zone.classList.remove('shake'), 350);
+                    showToast(error.message, true);
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.lesson-card').forEach(initLessonCard);
+            renderConflictBadge(document.querySelectorAll('.lesson-card.is-conflict').length);
+            updateStats();
+
+            const draft = loadDraft();
+            if (draft.hasChanges) {
+                markUnsavedChanges(true);
+            }
+
+            attachBoardEvents();
+
+            if (saveChangesBtn) {
+                saveChangesBtn.addEventListener('click', () => {
+                    clearDraft();
+                    showToast('Зміни синхронізовано.');
+                });
+            }
+
+            if (discardChangesBtn) {
+                discardChangesBtn.addEventListener('click', () => {
+                    clearDraft();
+                    window.location.reload();
+                });
+            }
+
+            if (importBtn && importFileInput && importForm) {
+                importBtn.addEventListener('click', () => importFileInput.click());
+                importFileInput.addEventListener('change', () => {
+                    if (importFileInput.files?.length) {
+                        importForm.submit();
+                    }
+                });
+            }
+
+            if (maxLessonsRange && maxLessonsValue) {
+                maxLessonsRange.addEventListener('input', () => {
+                    maxLessonsValue.textContent = maxLessonsRange.value;
+                });
+            }
+
+            if (generateForm) {
+                generateForm.addEventListener('submit', () => {
+                    if (generateProgressWrap && generateProgress) {
+                        generateProgressWrap.classList.remove('d-none');
+                        let progress = 0;
+                        const timer = setInterval(() => {
+                            progress = Math.min(progress + 12, 92);
+                            generateProgress.style.width = `${progress}%`;
+                            generateProgress.textContent = `${progress}%`;
+                            if (progress >= 92) clearInterval(timer);
+                        }, 220);
+                    }
+
+                    if (boardLoading) {
+                        boardLoading.classList.add('active');
+                    }
+                });
+            }
+
+            if (slotForm && slotModalEl) {
+                slotForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const formData = new FormData(slotForm);
+
+                    try {
+                        const response = await fetch('@Url.Action("SaveSlot", "Admin")', {
+                            method: 'POST',
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                            body: formData
+                        });
+
+                        if (!response.ok) {
+                            let payload;
+                            try {
+                                payload = await response.json();
+                            } catch {
+                                payload = { message: 'Помилка збереження слоту.' };
+                            }
+
+                            throw new Error(payload.message || 'Помилка збереження слоту.');
+                        }
+
+                        const payload = await response.json();
+                        const dayOfWeek = Number(formData.get('dayOfWeek'));
+                        const lessonNumber = Number(formData.get('lessonNumber'));
+                        const subjectId = Number(formData.get('subjectId'));
+                        const teacherId = Number(formData.get('teacherId'));
+                        const room = (formData.get('room') || '').toString();
+                        const subjectName = document.getElementById('modalSubject').selectedOptions[0]?.text || '';
+                        const teacherName = document.getElementById('modalTeacher').selectedOptions[0]?.text || '';
+                        const zone = document.querySelector(`.drop-zone[data-day="${dayOfWeek}"][data-lesson="${lessonNumber}"]`);
+
+                        if (!zone) {
+                            throw new Error('Клітинку для уроку не знайдено.');
+                        }
+
+                        if (activeEditCard) {
+                            const oldZone = activeEditCard.closest('.drop-zone');
+                            if (oldZone && oldZone !== zone) {
+                                updateCellButton(oldZone);
+                            }
+
+                            activeEditCard.dataset.day = String(dayOfWeek);
+                            activeEditCard.dataset.lesson = String(lessonNumber);
+                            activeEditCard.dataset.subjectId = String(subjectId);
+                            activeEditCard.dataset.teacherId = String(teacherId);
+                            activeEditCard.dataset.subjectName = subjectName;
+                            activeEditCard.dataset.teacherName = teacherName;
+                            activeEditCard.dataset.room = room;
+
+                            const subjectLabel = activeEditCard.querySelector('.lesson-card-subject');
+                            const teacherLabel = activeEditCard.querySelector('.teacher-label');
+                            const roomLabel = activeEditCard.querySelector('.room-label');
+                            if (subjectLabel) subjectLabel.textContent = subjectName;
+                            if (teacherLabel) teacherLabel.textContent = teacherName;
+                            if (roomLabel) roomLabel.textContent = room ? `каб. ${room}` : '';
+
+                            zone.appendChild(activeEditCard);
+                            initLessonCard(activeEditCard);
+                            updateCellButton(zone);
+                        } else {
+                            if (zone.querySelector('.lesson-card')) {
+                                throw new Error('Клітинка вже зайнята.');
+                            }
+
+                            const card = buildCard({
+                                slotId: payload.slotId,
+                                dayOfWeek,
+                                lessonNumber,
+                                subjectId,
+                                teacherId,
+                                subjectName,
+                                teacherName,
+                                room
+                            });
+
+                            zone.appendChild(card);
+                            updateCellButton(zone);
+                        }
+
+                        registerDraftEvent({ type: 'save', slotId: payload.slotId, dayOfWeek, lessonNumber });
+                        updateStats();
+                        bootstrap.Modal.getOrCreateInstance(slotModalEl).hide();
+                        showToast('Слот збережено.');
+                    } catch (error) {
+                        showToast(error.message, true);
+                    }
+                });
+            }
+
+            if (modalDeleteBtn) {
+                modalDeleteBtn.addEventListener('click', async () => {
+                    const slotId = Number(document.getElementById('modalSlotId').value || 0);
+                    if (!slotId) return;
+
+                    if (!confirm('Видалити цей урок?')) {
+                        return;
+                    }
+
+                    try {
+                        await deleteSlotRequest(slotId);
+                        if (activeEditCard) {
+                            const zone = activeEditCard.closest('.drop-zone');
+                            activeEditCard.remove();
+                            updateCellButton(zone);
+                        }
+
+                        registerDraftEvent({ type: 'delete', slotId });
+                        updateStats();
+                        bootstrap.Modal.getOrCreateInstance(slotModalEl).hide();
+                        showToast('Слот видалено.');
+                    } catch (error) {
+                        showToast(error.message, true);
+                    }
+                });
+            }
+
+            if (slotModalEl) {
+                slotModalEl.addEventListener('hidden.bs.modal', () => {
+                    activeEditCard = null;
+                    document.getElementById('modalSlotId').value = '';
+                });
+            }
+        });
     </script>
 }
