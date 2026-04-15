@@ -133,9 +133,19 @@ namespace EduLog.Controllers
                 return View();
             }
 
-            var cls = new Class { Name = name.Trim(), TeacherId = teacherId };
+            var normalizedName = name.Trim();
+            var exists = await _context.Class.AnyAsync(c => c.Name == normalizedName);
+            if (exists)
+            {
+                ModelState.AddModelError("", "Клас із такою назвою вже існує");
+                ViewData["Teachers"] = new SelectList(_context.Teacher.ToList(), "Id", "Surname");
+                return View();
+            }
+
+            var cls = new Class { Name = normalizedName, TeacherId = teacherId };
             _context.Class.Add(cls);
             await _context.SaveChangesAsync();
+            TempData["Success"] = $"Клас {normalizedName} створено.";
             return RedirectToAction(nameof(Classes));
         }
 
@@ -165,6 +175,160 @@ namespace EduLog.Controllers
             cls.RoomId = roomId;
             await _context.SaveChangesAsync();
             return RedirectToAction(nameof(EditClass), new { id });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> BulkCreatePrimarySchool(int parallelsPerGrade = 3)
+        {
+            var parallelLetters = new[] { "А", "Б", "В", "Г", "Д" };
+            var parallelCount = Math.Clamp(parallelsPerGrade, 2, parallelLetters.Length);
+            var teachers = await _context.Teacher
+                .OrderBy(t => t.Surname)
+                .ThenBy(t => t.Name)
+                .ToListAsync();
+
+            if (!teachers.Any())
+            {
+                TempData["Error"] = "Немає вчителів для призначення класних керівників.";
+                return RedirectToAction(nameof(Classes));
+            }
+
+            var existingSet = (await _context.Class.Select(c => c.Name).ToListAsync())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var classesToCreate = new List<Class>();
+            var teacherIndex = 0;
+
+            for (var grade = 1; grade <= 4; grade++)
+            {
+                for (var i = 0; i < parallelCount; i++)
+                {
+                    var className = $"{grade}-{parallelLetters[i]}";
+                    if (existingSet.Contains(className))
+                        continue;
+
+                    classesToCreate.Add(new Class
+                    {
+                        Name = className,
+                        TeacherId = teachers[teacherIndex % teachers.Count].Id
+                    });
+                    teacherIndex++;
+                }
+            }
+
+            if (!classesToCreate.Any())
+            {
+                TempData["Success"] = "Класи початкової школи вже існують.";
+                return RedirectToAction(nameof(Classes));
+            }
+
+            _context.Class.AddRange(classesToCreate);
+            await _context.SaveChangesAsync();
+            TempData["Success"] = $"Створено {classesToCreate.Count} класів початкової школи.";
+            return RedirectToAction(nameof(Classes));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> SeedStudentsForAllClasses()
+        {
+            var surnames = new[]
+            {
+                "Бондар", "Бондаренко", "Василенко", "Вовк", "Гаврилюк", "Гнатюк", "Демчук", "Дорошенко", "Іваненко", "Коваленко",
+                "Ковальчук", "Козак", "Кравець", "Кравчук", "Лисенко", "Мазур", "Мельник", "Мороз", "Олійник", "Павленко",
+                "Петренко", "Поліщук", "Романюк", "Савчук", "Сидоренко", "Степаненко", "Ткаченко", "Федоренко", "Шевченко", "Яременко"
+            };
+
+            var names = new[]
+            {
+                "Андрій", "Богдан", "Владислав", "Гліб", "Данило", "Дмитро", "Єгор", "Захар", "Іван", "Кирило",
+                "Максим", "Микита", "Назар", "Олег", "Павло", "Роман", "Сергій", "Тимофій", "Юрій", "Ярослав",
+                "Анастасія", "Валерія", "Вероніка", "Дарина", "Діана", "Єва", "Злата", "Ірина", "Катерина", "Марія",
+                "Наталія", "Оксана", "Поліна", "Софія", "Тетяна", "Уляна", "Христина", "Юлія", "Яна", "Олена"
+            };
+
+            var patronymics = new[]
+            {
+                "Андрійович", "Богданович", "Вікторович", "Володимирович", "Ігорович", "Іванович", "Максимович", "Миколайович", "Олександрович", "Олегович",
+                "Павлович", "Петрович", "Сергійович", "Юрійович", "Ярославович", "Андріївна", "Богданівна", "Вікторівна", "Володимирівна", "Іванівна",
+                "Ігорівна", "Максимівна", "Миколаївна", "Олександрівна", "Олегівна", "Павлівна", "Петрівна", "Сергіївна", "Юріївна", "Ярославівна"
+            };
+
+            var classes = await _context.Class.OrderBy(c => c.Name).ToListAsync();
+            if (!classes.Any())
+            {
+                TempData["Error"] = "Спочатку створіть класи.";
+                return RedirectToAction(nameof(Classes));
+            }
+
+            var existingCounts = await _context.Student
+                .GroupBy(s => s.ClassId)
+                .Select(g => new { g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.Key, x => x.Count);
+
+            var existingNamesByClass = await _context.Student
+                .GroupBy(s => s.ClassId)
+                .Select(g => new
+                {
+                    ClassId = g.Key,
+                    FullNames = g.Select(s => (s.Surname + " " + s.Name + " " + s.Patronymic).Trim()).ToList()
+                })
+                .ToDictionaryAsync(
+                    x => x.ClassId,
+                    x => new HashSet<string>(x.FullNames, StringComparer.OrdinalIgnoreCase));
+
+            var random = Random.Shared;
+            var studentsToAdd = new List<Student>();
+
+            foreach (var cls in classes)
+            {
+                var currentCount = existingCounts.TryGetValue(cls.Id, out var count) ? count : 0;
+                var targetCount = random.Next(25, 31);
+                var toCreate = Math.Max(0, targetCount - currentCount);
+                if (toCreate == 0)
+                    continue;
+
+                if (!existingNamesByClass.TryGetValue(cls.Id, out var fullNames))
+                {
+                    fullNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    existingNamesByClass[cls.Id] = fullNames;
+                }
+
+                var attempts = 0;
+                while (toCreate > 0 && attempts < 500)
+                {
+                    attempts++;
+                    var surname = surnames[random.Next(surnames.Length)];
+                    var nameToUse = names[random.Next(names.Length)];
+                    var patronymic = patronymics[random.Next(patronymics.Length)];
+                    var fullName = $"{surname} {nameToUse} {patronymic}";
+
+                    if (!fullNames.Add(fullName))
+                        continue;
+
+                    studentsToAdd.Add(new Student
+                    {
+                        ClassId = cls.Id,
+                        Surname = surname,
+                        Name = nameToUse,
+                        Patronymic = patronymic
+                    });
+                    toCreate--;
+                }
+            }
+
+            if (!studentsToAdd.Any())
+            {
+                TempData["Success"] = "У всіх класах вже достатньо учнів (25+).";
+                return RedirectToAction(nameof(Classes));
+            }
+
+            _context.Student.AddRange(studentsToAdd);
+            await _context.SaveChangesAsync();
+
+            TempData["Success"] = $"Додано {studentsToAdd.Count} учнів у наявні класи.";
+            return RedirectToAction(nameof(Classes));
         }
 
         [HttpPost]

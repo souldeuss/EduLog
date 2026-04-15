@@ -6,6 +6,7 @@
     var templates = ViewData["Templates"] as List<EduLog.Models.ClassTemplate> ?? new();
     var subjects = ViewData["Subjects"] as List<EduLog.Models.Subject> ?? new();
     var error = TempData["Error"] as string;
+    var success = TempData["Success"] as string;
 }
 
 <partial name="_AdminNav" />
@@ -17,10 +18,29 @@
     <div class="alert alert-danger">@error</div>
 }
 
-<div class="mb-4">
+@if (!string.IsNullOrWhiteSpace(success))
+{
+    <div class="alert alert-success">@success</div>
+}
+
+<div class="mb-4 d-flex flex-wrap gap-2">
     <a asp-action="CreateClass" class="btn btn-primary">
         <i class="bi bi-plus-circle"></i> Створити клас
     </a>
+
+    <form asp-action="BulkCreatePrimarySchool" method="post" class="d-inline"
+          onsubmit="return confirm('Створити класи 1–4 (А, Б, В) і призначити класних керівників?')">
+        <button type="submit" class="btn btn-outline-primary">
+            <i class="bi bi-building-add"></i> Додати початкову школу (1–4)
+        </button>
+    </form>
+
+    <form asp-action="SeedStudentsForAllClasses" method="post" class="d-inline"
+          onsubmit="return confirm('Згенерувати учнів для всіх класів (до 25–30 на клас)?')">
+        <button type="submit" class="btn btn-outline-success">
+            <i class="bi bi-people-fill"></i> Згенерувати учнів для всіх класів
+        </button>
+    </form>
 </div>
 
 <div class="mb-3 col-md-6">
