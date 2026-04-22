@@ -574,6 +574,7 @@ else
         let unsavedChanges = false;
         let activeDraggedCard = null;
         let activeEditCard = null;
+        let isDropSaving = false;
 
         function getAntiForgeryToken() {
             return document.querySelector('#slotForm input[name="__RequestVerificationToken"]')?.value
@@ -804,6 +805,76 @@ else
             modal.show();
         }
 
+        async function moveLessonCardToZone(card, targetZone) {
+            if (!card || !targetZone) {
+                return;
+            }
+
+            if (isDropSaving || card.dataset.movePending === '1') {
+                return;
+            }
+
+            const sourceZone = card.closest('.drop-zone');
+            const targetDay = Number(targetZone.dataset.day);
+            const targetLesson = Number(targetZone.dataset.lesson);
+            const sourceDay = Number(card.dataset.day);
+            const sourceLesson = Number(card.dataset.lesson);
+
+            if (!sourceZone || (sourceDay === targetDay && sourceLesson === targetLesson)) {
+                return;
+            }
+
+            const existingTargetCard = targetZone.querySelector('.lesson-card');
+            if (existingTargetCard && existingTargetCard !== card) {
+                targetZone.classList.add('shake');
+                setTimeout(() => targetZone.classList.remove('shake'), 350);
+                showToast('Ця клітинка вже зайнята.', true);
+                return;
+            }
+
+            isDropSaving = true;
+            card.dataset.movePending = '1';
+
+            try {
+                const payload = await saveSlotRequest({
+                    slotId: card.dataset.slotId,
+                    yearId: '@(selectedYear?.Id ?? 0)',
+                    classId: '@(selectedClass?.Id ?? 0)',
+                    dayOfWeek: targetDay,
+                    lessonNumber: targetLesson,
+                    subjectId: card.dataset.subjectId,
+                    teacherId: card.dataset.teacherId,
+                    room: card.dataset.room || ''
+                });
+
+                targetZone.appendChild(card);
+                card.dataset.slotId = String(payload.slotId || card.dataset.slotId || '');
+                card.dataset.day = String(targetDay);
+                card.dataset.lesson = String(targetLesson);
+
+                targetZone.dataset.slotId = card.dataset.slotId;
+                sourceZone.dataset.slotId = sourceZone.querySelector('.lesson-card')?.dataset.slotId || '0';
+
+                updateCellButton(targetZone);
+                updateCellButton(sourceZone);
+
+                registerDraftEvent({
+                    type: 'move',
+                    slotId: card.dataset.slotId,
+                    from: { day: sourceDay, lesson: sourceLesson },
+                    to: { day: targetDay, lesson: targetLesson }
+                });
+                updateStats();
+            } catch (error) {
+                targetZone.classList.add('shake');
+                setTimeout(() => targetZone.classList.remove('shake'), 350);
+                showToast(error.message, true);
+            } finally {
+                isDropSaving = false;
+                card.dataset.movePending = '0';
+            }
+        }
+
         function attachBoardEvents() {
             if (!scheduleBody) return;
 
@@ -881,54 +952,7 @@ else
                 if (!zone || !activeDraggedCard) return;
                 event.preventDefault();
                 zone.classList.remove('drop-highlight');
-
-                const sourceZone = activeDraggedCard.closest('.drop-zone');
-                const targetDay = Number(zone.dataset.day);
-                const targetLesson = Number(zone.dataset.lesson);
-                const sourceDay = Number(activeDraggedCard.dataset.day);
-                const sourceLesson = Number(activeDraggedCard.dataset.lesson);
-
-                if (sourceDay === targetDay && sourceLesson === targetLesson) {
-                    return;
-                }
-
-                if (zone.querySelector('.lesson-card')) {
-                    zone.classList.add('shake');
-                    setTimeout(() => zone.classList.remove('shake'), 350);
-                    showToast('Ця клітинка вже зайнята.', true);
-                    return;
-                }
-
-                try {
-                    await saveSlotRequest({
-                        slotId: activeDraggedCard.dataset.slotId,
-                        yearId: '@(selectedYear?.Id ?? 0)',
-                        classId: '@(selectedClass?.Id ?? 0)',
-                        dayOfWeek: targetDay,
-                        lessonNumber: targetLesson,
-                        subjectId: activeDraggedCard.dataset.subjectId,
-                        teacherId: activeDraggedCard.dataset.teacherId,
-                        room: activeDraggedCard.dataset.room || ''
-                    });
-
-                    zone.appendChild(activeDraggedCard);
-                    activeDraggedCard.dataset.day = String(targetDay);
-                    activeDraggedCard.dataset.lesson = String(targetLesson);
-                    updateCellButton(zone);
-                    updateCellButton(sourceZone);
-
-                    registerDraftEvent({
-                        type: 'move',
-                        slotId: activeDraggedCard.dataset.slotId,
-                        from: { day: sourceDay, lesson: sourceLesson },
-                        to: { day: targetDay, lesson: targetLesson }
-                    });
-                    updateStats();
-                } catch (error) {
-                    zone.classList.add('shake');
-                    setTimeout(() => zone.classList.remove('shake'), 350);
-                    showToast(error.message, true);
-                }
+                await moveLessonCardToZone(activeDraggedCard, zone);
             });
         }
 

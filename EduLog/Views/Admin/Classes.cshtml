@@ -28,13 +28,6 @@
         <i class="bi bi-plus-circle"></i> Створити клас
     </a>
 
-    <form asp-action="BulkCreatePrimarySchool" method="post" class="d-inline"
-          onsubmit="return confirm('Створити класи 1–4 (А, Б, В) і призначити класних керівників?')">
-        <button type="submit" class="btn btn-outline-primary">
-            <i class="bi bi-building-add"></i> Додати початкову школу (1–4)
-        </button>
-    </form>
-
     <form asp-action="SeedStudentsForAllClasses" method="post" class="d-inline"
           onsubmit="return confirm('Згенерувати учнів для всіх класів (до 25–30 на клас)?')">
         <button type="submit" class="btn btn-outline-success">

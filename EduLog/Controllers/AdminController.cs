@@ -38,9 +38,9 @@ namespace EduLog.Controllers
         }
 
         // ───────── Dashboard ─────────
-        public async Task<IActionResult> Index()
+        public async Task<IActionResult> Index(DateTime? month)
         {
-            var now = DateTime.Today;
+            var now = (month ?? DateTime.Today).Date;
             var monthStart = new DateTime(now.Year, now.Month, 1);
             var monthEnd = monthStart.AddMonths(1);
 
@@ -56,6 +56,33 @@ namespace EduLog.Controllers
             ViewData["CurrentMonth"] = monthStart;
 
             return View();
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetEvents(DateTime month)
+        {
+            var monthStart = new DateTime(month.Year, month.Month, 1);
+            var monthEnd = monthStart.AddMonths(1);
+
+            var events = await _context.SchoolEvent
+                .Where(e => e.Date >= monthStart && e.Date < monthEnd)
+                .OrderBy(e => e.Date)
+                .ThenBy(e => e.Title)
+                .Select(e => new
+                {
+                    id = e.Id,
+                    title = e.Title,
+                    date = e.Date.ToString("yyyy-MM-dd"),
+                    color = e.Color
+                })
+                .ToListAsync();
+
+            return Json(new
+            {
+                success = true,
+                month = monthStart.ToString("yyyy-MM-dd"),
+                events
+            });
         }
 
         [HttpPost]
@@ -75,6 +102,32 @@ namespace EduLog.Controllers
             };
 
             _context.SchoolEvent.Add(schoolEvent);
+            await _context.SaveChangesAsync();
+
+            return Json(new
+            {
+                success = true,
+                id = schoolEvent.Id,
+                title = schoolEvent.Title,
+                date = schoolEvent.Date.ToString("yyyy-MM-dd"),
+                color = schoolEvent.Color
+            });
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> UpdateEvent(int id, string title, DateTime date, string? color)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return BadRequest(new { success = false, message = "Назва події обов'язкова." });
+
+            var schoolEvent = await _context.SchoolEvent.FirstOrDefaultAsync(e => e.Id == id);
+            if (schoolEvent == null)
+                return NotFound(new { success = false, message = "Подію не знайдено." });
+
+            schoolEvent.Title = title.Trim();
+            schoolEvent.Date = date.Date;
+            schoolEvent.Color = NormalizeHexColor(color);
+
             await _context.SaveChangesAsync();
 
             return Json(new

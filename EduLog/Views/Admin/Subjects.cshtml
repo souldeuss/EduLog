@@ -23,10 +23,10 @@
 }
 
 <!-- Import bar -->
-<div class="alert alert-success d-flex align-items-center gap-2 mb-3" id="importBar">
+<div class="alert alert-secondary py-2 px-3 d-flex align-items-center gap-2 mb-3 small" id="importBar">
     <i class="bi bi-file-earmark-spreadsheet"></i>
-    <span>Маєте готову таблицю? Імпортуйте предмети з <strong>Excel або CSV</strong> одразу для всіх класів</span>
-    <button class="btn btn-sm btn-outline-success ms-auto" onclick="document.getElementById('importFile').click()">
+    <span>Імпорт предметів з <strong>Excel або CSV</strong></span>
+    <button class="btn btn-sm btn-outline-primary ms-auto" onclick="document.getElementById('importFile').click()">
         <i class="bi bi-upload"></i> Завантажити файл
     </button>
     <input type="file" id="importFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadImport(this)">
@@ -181,9 +181,10 @@
                         data-primary-teacher="@primaryTeacher"
                         data-school-level="@schoolLevel">
                         <td>
-                            <input class="form-control form-control-sm subject-name-input"
+                            <input class="form-control form-control-sm subject-name-input d-none"
                                    data-subject-name-input="@s.Id"
                                    value="@s.Name"
+                                   oninput="syncSubjectNameInputs(@s.Id, this.value)"
                                    onchange="updateSubjectField(this, @s.Id)" />
                             <div class="small text-muted mt-1 subject-name-text" data-subject-name-text="@s.Id">@s.Name</div>
                             <div class="small mt-1 subject-warning" data-subject-warning="@s.Id"></div>
@@ -227,9 +228,10 @@
                                         </span>
                                     }
                                 }
-                                <button class="btn btn-sm btn-outline-success border-dashed py-0 px-2"
+                                <button class="btn btn-sm btn-outline-success border-dashed py-0 px-2 add-class-btn"
+                                        data-subject-name="@s.Name"
                                         style="font-size:12px; border-style:dashed"
-                                        onclick="openAddClassModal(@s.Id, @Html.Raw(System.Text.Json.JsonSerializer.Serialize(s.Name)))">+ клас</button>
+                                        onclick="openAddClassModal(@s.Id, this.dataset.subjectName)">+ клас</button>
                             </div>
                         </td>
                         <td>
@@ -263,7 +265,11 @@
                             </div>
                         </td>
                         <td>
-                            <button type="button" class="btn btn-sm btn-outline-secondary mb-1" onclick="focusSubjectEditor(@s.Id)"><i class="bi bi-pencil"></i></button>
+                            <div class="btn-group btn-group-sm mb-1" role="group">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-btn="@s.Id" onclick="startInlineEdit(@s.Id)"><i class="bi bi-pencil"></i></button>
+                                <button type="button" class="btn btn-sm btn-outline-success d-none" data-save-btn="@s.Id" onclick="saveInlineSubjectName(@s.Id)"><i class="bi bi-check-lg"></i></button>
+                                <button type="button" class="btn btn-sm btn-outline-danger d-none" data-cancel-btn="@s.Id" onclick="cancelInlineEdit(@s.Id)"><i class="bi bi-x-lg"></i></button>
+                            </div>
                             <form asp-action="DeleteSubject" method="post" class="d-inline"
                                   onsubmit="return confirm('Видалити предмет @s.Name?')">
                                 <input type="hidden" name="id" value="@s.Id" />
@@ -343,14 +349,17 @@
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div>
-                                    <input class="form-control form-control-sm subject-name-input mb-1"
+                                    <input class="form-control form-control-sm subject-name-input mb-1 d-none"
                                            data-subject-name-input="@s.Id"
                                            value="@s.Name"
+                                           oninput="syncSubjectNameInputs(@s.Id, this.value)"
                                            onchange="updateSubjectField(this, @s.Id)" />
                                     <div class="small text-muted subject-name-text" data-subject-name-text="@s.Id">@s.Name</div>
                                 </div>
                                 <div class="btn-group btn-group-sm">
-                                    <button type="button" class="btn btn-outline-secondary" onclick="focusSubjectEditor(@s.Id)"><i class="bi bi-pencil"></i></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-edit-btn="@s.Id" onclick="startInlineEdit(@s.Id)"><i class="bi bi-pencil"></i></button>
+                                    <button type="button" class="btn btn-outline-success d-none" data-save-btn="@s.Id" onclick="saveInlineSubjectName(@s.Id)"><i class="bi bi-check-lg"></i></button>
+                                    <button type="button" class="btn btn-outline-danger d-none" data-cancel-btn="@s.Id" onclick="cancelInlineEdit(@s.Id)"><i class="bi bi-x-lg"></i></button>
                                     <form asp-action="DeleteSubject" method="post" class="d-inline"
                                           onsubmit="return confirm('Видалити предмет @s.Name?')">
                                         <input type="hidden" name="id" value="@s.Id" />
@@ -404,9 +413,10 @@
                                             </span>
                                         }
                                     }
-                                    <button class="btn btn-sm btn-outline-success border-dashed py-0 px-2"
+                                    <button class="btn btn-sm btn-outline-success border-dashed py-0 px-2 add-class-btn"
+                                            data-subject-name="@s.Name"
                                             style="font-size:12px; border-style:dashed"
-                                            onclick="openAddClassModal(@s.Id, @Html.Raw(System.Text.Json.JsonSerializer.Serialize(s.Name)))">+ клас</button>
+                                            onclick="openAddClassModal(@s.Id, this.dataset.subjectName)">+ клас</button>
                                 </div>
                             </div>
 
@@ -588,7 +598,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Скасувати</button>
-                <button class="btn btn-success btn-sm" onclick="confirmAddClass()">Додати</button>
+                <button id="confirmAddClassBtn" class="btn btn-success btn-sm" onclick="confirmAddClass()">Додати</button>
             </div>
         </div>
     </div>
@@ -600,6 +610,10 @@
     var _importRows = [];
     var _subjectsViewKey = 'admin.subjects.view';
     var _teacherOptionsHtml = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(teacherOptionsHtml));
+    var _allTableRows = [];
+    var _allCardItems = [];
+    var _editingOriginalNames = {};
+    var _allModalClassOptions = [];
 
     function parseCsvSet(raw) {
         return (raw || '').split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x.length > 0; });
@@ -702,7 +716,11 @@
 
     function renderGroupedTable(mode) {
         var body = document.getElementById('subjectsTableBody');
-        var rows = Array.from(document.querySelectorAll('.subject-row')).filter(matchesFilters);
+        if (!body) {
+            return;
+        }
+
+        var rows = _allTableRows.filter(matchesFilters);
         body.innerHTML = '';
 
         if (mode === 'all') {
@@ -729,7 +747,11 @@
 
     function renderGroupedCards(mode) {
         var host = document.getElementById('subjectsCardsGroups');
-        var cards = Array.from(document.querySelectorAll('.subject-card-item')).filter(matchesFilters);
+        if (!host) {
+            return;
+        }
+
+        var cards = _allCardItems.filter(matchesFilters);
         host.innerHTML = '';
 
         if (mode === 'all') {
@@ -812,6 +834,7 @@
             });
 
             refreshSubjectIndicators(subjectId);
+            setInlineEditState(subjectId, false);
             applyGrouping();
         });
     }
@@ -859,12 +882,68 @@
         });
     }
 
-    function focusSubjectEditor(subjectId) {
+    function syncSubjectNameInputs(subjectId, value) {
+        document.querySelectorAll('[data-subject-name-input="' + subjectId + '"]').forEach(function (input) {
+            if (input.value !== value) {
+                input.value = value;
+            }
+        });
+    }
+
+    function setInlineEditState(subjectId, isEditing) {
+        document.querySelectorAll('[data-subject-name-input="' + subjectId + '"]').forEach(function (input) {
+            input.classList.toggle('d-none', !isEditing);
+        });
+        document.querySelectorAll('[data-subject-name-text="' + subjectId + '"]').forEach(function (text) {
+            text.classList.toggle('d-none', isEditing);
+        });
+        document.querySelectorAll('[data-edit-btn="' + subjectId + '"]').forEach(function (btn) {
+            btn.classList.toggle('d-none', isEditing);
+        });
+        document.querySelectorAll('[data-save-btn="' + subjectId + '"]').forEach(function (btn) {
+            btn.classList.toggle('d-none', !isEditing);
+        });
+        document.querySelectorAll('[data-cancel-btn="' + subjectId + '"]').forEach(function (btn) {
+            btn.classList.toggle('d-none', !isEditing);
+        });
+    }
+
+    function startInlineEdit(subjectId) {
+        var firstText = document.querySelector('[data-subject-name-text="' + subjectId + '"]');
+        _editingOriginalNames[subjectId] = firstText ? firstText.textContent.trim() : '';
+        setInlineEditState(subjectId, true);
+
         var target = document.querySelector('#subject-row-' + subjectId + ' .subject-name-input') || document.querySelector('#subject-card-' + subjectId + ' .subject-name-input');
         if (target) {
             target.focus();
+            target.select();
             target.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
+    }
+
+    function saveInlineSubjectName(subjectId) {
+        var input = document.querySelector('#subject-row-' + subjectId + ' .subject-name-input') || document.querySelector('#subject-card-' + subjectId + ' .subject-name-input');
+        if (!input) {
+            return;
+        }
+
+        var value = (input.value || '').trim();
+        if (!value) {
+            input.focus();
+            return;
+        }
+
+        syncSubjectNameInputs(subjectId, value);
+        updateSubjectField(input, subjectId);
+    }
+
+    function cancelInlineEdit(subjectId) {
+        var original = _editingOriginalNames[subjectId];
+        if (typeof original === 'string') {
+            syncSubjectNameInputs(subjectId, original);
+        }
+
+        setInlineEditState(subjectId, false);
     }
 
     function calculateSubjectLevel(subjectId) {
@@ -954,9 +1033,50 @@
     }
 
     // ── Class chips ──
+    function getAssignedClassIds(subjectId) {
+        var set = new Set();
+        document.querySelectorAll('.chips-container[data-subject="' + subjectId + '"] .class-chip').forEach(function (chip) {
+            var id = parseInt(chip.getAttribute('data-class-id') || '0', 10);
+            if (id > 0) {
+                set.add(id);
+            }
+        });
+        return set;
+    }
+
     function openAddClassModal(subjectId, subjectName) {
         _modalSubjectId = subjectId;
         document.getElementById('modalSubjectLabel').textContent = '→ ' + subjectName;
+        var select = document.getElementById('modalClassSelect');
+        var confirmBtn = document.getElementById('confirmAddClassBtn');
+        var assignedIds = getAssignedClassIds(subjectId);
+
+        if (select) {
+            select.innerHTML = '';
+            _allModalClassOptions.forEach(function (option) {
+                if (assignedIds.has(option.id)) {
+                    return;
+                }
+
+                var el = document.createElement('option');
+                el.value = String(option.id);
+                el.textContent = option.name;
+                select.appendChild(el);
+            });
+
+            if (!select.options.length) {
+                var empty = document.createElement('option');
+                empty.value = '';
+                empty.textContent = 'Немає доступних класів';
+                select.appendChild(empty);
+                select.disabled = true;
+                if (confirmBtn) confirmBtn.disabled = true;
+            } else {
+                select.disabled = false;
+                if (confirmBtn) confirmBtn.disabled = false;
+            }
+        }
+
         new bootstrap.Modal(document.getElementById('addClassModal')).show();
     }
 
@@ -970,20 +1090,37 @@
     }
 
     function confirmAddClass() {
-        var classId = parseInt(document.getElementById('modalClassSelect').value);
+        var select = document.getElementById('modalClassSelect');
+        var classId = parseInt(select ? select.value : '0', 10);
+        if (!classId) {
+            return;
+        }
+
+        if (getAssignedClassIds(_modalSubjectId).has(classId)) {
+            alert('Цей клас уже додано до предмета.');
+            return;
+        }
+
         fetch('@Url.Action("AddClassToSubject", "Admin")', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ subjectId: _modalSubjectId, classId: classId })
         }).then(function (r) { return r.json(); }).then(function (data) {
-            if (!data.success) return;
+            if (!data.success) {
+                alert(data.message || 'Не вдалося додати клас до предмета');
+                return;
+            }
 
             document.querySelectorAll('.chips-container[data-subject="' + _modalSubjectId + '"]').forEach(function (container) {
                 if (container.querySelector('[data-class-id="' + classId + '"]')) return;
 
-                var addBtn = container.querySelector('button:last-child');
+                var addBtn = container.querySelector('.add-class-btn');
                 var chip = buildClassChip(_modalSubjectId, classId, data.className);
-                container.insertBefore(chip, addBtn);
+                if (addBtn) {
+                    container.insertBefore(chip, addBtn);
+                } else {
+                    container.appendChild(chip);
+                }
             });
 
             refreshSubjectGroupingMeta(_modalSubjectId);
@@ -1109,8 +1246,40 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+        _allTableRows = Array.from(document.querySelectorAll('.subject-row'));
+        _allCardItems = Array.from(document.querySelectorAll('.subject-card-item'));
+
+        var modalClassSelect = document.getElementById('modalClassSelect');
+        if (modalClassSelect) {
+            _allModalClassOptions = Array.from(modalClassSelect.options).map(function (opt) {
+                return {
+                    id: parseInt(opt.value || '0', 10),
+                    name: opt.textContent || ''
+                };
+            }).filter(function (x) { return x.id > 0; });
+        }
+
         var initialMode = getInitialViewMode();
         setSubjectsView(initialMode);
+
+        document.querySelectorAll('.subject-name-input').forEach(function (input) {
+            input.addEventListener('keydown', function (event) {
+                var subjectId = parseInt(input.getAttribute('data-subject-name-input') || '0', 10);
+                if (!subjectId) {
+                    return;
+                }
+
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    saveInlineSubjectName(subjectId);
+                }
+
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    cancelInlineEdit(subjectId);
+                }
+            });
+        });
 
         document.querySelectorAll('.subject-row, .subject-card-item').forEach(function (item) {
             var subjectId = parseInt(item.dataset.subjectId || '0');

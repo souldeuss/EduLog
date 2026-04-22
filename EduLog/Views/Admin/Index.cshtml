@@ -111,7 +111,15 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        cursor: pointer;
     }
+
+    .calendar-toolbar {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+    }
+
 </style>
 
 <partial name="_AdminNav" />
@@ -168,7 +176,11 @@
 <div class="mt-5">
     <div class="d-flex justify-content-between align-items-center mb-2">
         <h5 class="mb-0">Події школи</h5>
-        <span class="text-muted small">@monthStart.ToString("MMMM yyyy")</span>
+        <div class="calendar-toolbar">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="prevMonthBtn">&larr;</button>
+            <span class="text-muted small" id="currentMonthLabel">@monthStart.ToString("MMMM yyyy")</span>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="nextMonthBtn">&rarr;</button>
+        </div>
     </div>
 
     <div class="events-calendar">
@@ -182,7 +194,7 @@
             <div>Нд</div>
         </div>
 
-        <div class="calendar-grid" id="calendarGrid">
+        <div class="calendar-grid" id="calendarGrid" data-current-month="@monthStart.ToString("yyyy-MM-dd")">
             @for (var i = 0; i < totalDays; i++)
             {
                 var day = gridStart.AddDays(i);
@@ -201,8 +213,11 @@
                             <button type="button"
                                     class="event-chip"
                                     data-event-id="@ev.Id"
+                                    data-date="@ev.Date.ToString("yyyy-MM-dd")"
+                                    data-title="@ev.Title"
+                                    data-color="@ev.Color"
                                     style="@(string.IsNullOrWhiteSpace(ev.Color) ? null : $"background:{ev.Color};")"
-                                    title="Натисніть, щоб видалити">
+                                    title="Натисніть, щоб редагувати">
                                 @ev.Title
                             </button>
                         }
@@ -222,19 +237,24 @@
             </div>
             <div class="modal-body">
                 <div class="small text-muted mb-2">Дата: <span id="eventDateLabel"></span></div>
+                <input type="hidden" id="eventIdInput" />
                 <input type="hidden" id="eventDateInput" />
-                <div class="mb-2">
+                <div class="small mb-2 d-none" id="selectedEventTitleRow">Поточна назва: <span id="selectedEventTitle"></span></div>
+                <div class="d-flex gap-2 mb-2" id="eventActionButtons">
+                    <button type="button" class="btn btn-primary btn-sm d-none" id="startAddModeBtn">Додати</button>
+                    <button type="button" class="btn btn-primary btn-sm d-none" id="startEditModeBtn">Редагувати</button>
+                </div>
+                <div class="mb-2 d-none" id="eventEditorFields">
                     <label class="form-label small">Назва</label>
                     <input type="text" id="eventTitleInput" class="form-control form-control-sm" maxlength="100" />
-                </div>
-                <div>
                     <label class="form-label small">Колір (необов'язково)</label>
                     <input type="color" id="eventColorInput" class="form-control form-control-color" value="#0d6efd" />
                 </div>
             </div>
             <div class="modal-footer py-2">
+                <button type="button" class="btn btn-outline-danger btn-sm me-auto d-none" id="deleteEventBtn">Видалити</button>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Скасувати</button>
-                <button type="button" class="btn btn-primary btn-sm" id="saveEventBtn">Додати</button>
+                <button type="button" class="btn btn-primary btn-sm d-none" id="saveEventBtn">Зберегти</button>
             </div>
         </div>
     </div>
@@ -243,14 +263,30 @@
 @section Scripts {
 <script>
     var eventsData = @Html.Raw(eventsJson);
+    var createEventUrl = '@Url.Action("CreateEvent", "Admin")';
+    var updateEventUrl = '@Url.Action("UpdateEvent", "Admin")';
+    var deleteEventUrl = '@Url.Action("DeleteEvent", "Admin")';
+    var getEventsUrl = '@Url.Action("GetEvents", "Admin")';
     var calendarGrid = document.getElementById('calendarGrid');
+    var currentMonthLabel = document.getElementById('currentMonthLabel');
+    var prevMonthBtn = document.getElementById('prevMonthBtn');
+    var nextMonthBtn = document.getElementById('nextMonthBtn');
     var eventModalEl = document.getElementById('eventModal');
     var eventModal = new bootstrap.Modal(eventModalEl);
+    var eventIdInput = document.getElementById('eventIdInput');
     var eventDateInput = document.getElementById('eventDateInput');
     var eventDateLabel = document.getElementById('eventDateLabel');
     var eventTitleInput = document.getElementById('eventTitleInput');
     var eventColorInput = document.getElementById('eventColorInput');
+    var selectedEventTitleRow = document.getElementById('selectedEventTitleRow');
+    var selectedEventTitle = document.getElementById('selectedEventTitle');
+    var eventEditorFields = document.getElementById('eventEditorFields');
+    var startAddModeBtn = document.getElementById('startAddModeBtn');
+    var startEditModeBtn = document.getElementById('startEditModeBtn');
+    var deleteEventBtn = document.getElementById('deleteEventBtn');
     var saveEventBtn = document.getElementById('saveEventBtn');
+    var modalMode = 'create';
+    var currentMonth = new Date(calendarGrid.dataset.currentMonth + 'T00:00:00');
 
     function escapeHtml(text) {
         return (text || '').replace(/[&<>"']/g, function (ch) {
@@ -258,47 +294,113 @@
         });
     }
 
-    function openEventModal(date) {
+    function formatMonthLabel(date) {
+        var value = new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(date);
+        return value.charAt(0).toUpperCase() + value.slice(1);
+    }
+
+    function toMonthStart(date) {
+        return new Date(date.getFullYear(), date.getMonth(), 1);
+    }
+
+    function toIsoDate(date) {
+        var y = date.getFullYear();
+        var m = String(date.getMonth() + 1).padStart(2, '0');
+        var d = String(date.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + d;
+    }
+
+    function setEditorVisible(visible) {
+        eventEditorFields.classList.toggle('d-none', !visible);
+        saveEventBtn.classList.toggle('d-none', !visible);
+    }
+
+    function renderCalendar(monthDate, events) {
+        var monthStart = toMonthStart(monthDate);
+        var monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+        var monthStartOffset = (monthStart.getDay() + 6) % 7;
+        var monthEndOffset = 6 - ((monthEnd.getDay() + 6) % 7);
+        var gridStart = new Date(monthStart);
+        gridStart.setDate(monthStart.getDate() - monthStartOffset);
+        var gridEnd = new Date(monthEnd);
+        gridEnd.setDate(monthEnd.getDate() + monthEndOffset);
+
+        var eventsByDate = {};
+        events.forEach(function (ev) {
+            if (!eventsByDate[ev.date]) {
+                eventsByDate[ev.date] = [];
+            }
+            eventsByDate[ev.date].push(ev);
+        });
+
+        var html = '';
+        for (var day = new Date(gridStart); day <= gridEnd; day.setDate(day.getDate() + 1)) {
+            var date = toIsoDate(day);
+            var inCurrentMonth = day.getMonth() === monthStart.getMonth();
+            var dayEvents = eventsByDate[date] || [];
+            var className = 'calendar-day';
+            if (!inCurrentMonth) {
+                className += ' other-month';
+            }
+            if (inCurrentMonth && dayEvents.length === 0) {
+                className += ' empty-current-month';
+            }
+
+            html += '<div class="' + className + '" data-date="' + date + '" data-in-month="' + (inCurrentMonth ? '1' : '0') + '" data-has-events="' + (dayEvents.length > 0 ? '1' : '0') + '">';
+            html += '<div class="small fw-semibold">' + day.getDate() + '</div>';
+            html += '<div class="event-list">';
+
+            dayEvents.forEach(function (ev) {
+                var styleAttr = ev.color ? ' style="background:' + escapeHtml(ev.color) + ';"' : '';
+                html += '<button type="button" class="event-chip" data-event-id="' + ev.id + '" data-date="' + ev.date + '" data-title="' + escapeHtml(ev.title) + '" data-color="' + escapeHtml(ev.color || '') + '" title="Натисніть, щоб редагувати"' + styleAttr + '>' + escapeHtml(ev.title) + '</button>';
+            });
+
+            html += '</div>';
+            html += '</div>';
+        }
+
+        calendarGrid.innerHTML = html;
+        calendarGrid.dataset.currentMonth = toIsoDate(monthStart);
+        currentMonthLabel.textContent = formatMonthLabel(monthStart);
+    }
+
+    function openCreateModal(date) {
+        modalMode = 'create';
+        eventIdInput.value = '';
         eventDateInput.value = date;
         eventDateLabel.textContent = date;
         eventTitleInput.value = '';
         eventColorInput.value = '#0d6efd';
+        selectedEventTitleRow.classList.add('d-none');
+        startEditModeBtn.classList.add('d-none');
+        startAddModeBtn.classList.remove('d-none');
+        deleteEventBtn.classList.add('d-none');
+        setEditorVisible(false);
         eventModal.show();
-        setTimeout(function () { eventTitleInput.focus(); }, 120);
     }
 
-    function appendEventToDay(dayCell, ev) {
-        var list = dayCell.querySelector('.event-list');
-        var chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'event-chip';
-        chip.setAttribute('data-event-id', ev.id);
-        chip.setAttribute('title', 'Натисніть, щоб видалити');
-        chip.innerHTML = escapeHtml(ev.title);
-        if (ev.color) {
-            chip.style.background = ev.color;
-        }
-        list.appendChild(chip);
-        dayCell.dataset.hasEvents = '1';
-        dayCell.classList.remove('empty-current-month');
+    function openEditModal(eventData) {
+        modalMode = 'edit';
+        eventIdInput.value = eventData.id;
+        eventDateInput.value = eventData.date;
+        eventDateLabel.textContent = eventData.date;
+        eventTitleInput.value = eventData.title || '';
+        eventColorInput.value = eventData.color || '#0d6efd';
+        selectedEventTitle.textContent = eventData.title || '';
+        selectedEventTitleRow.classList.remove('d-none');
+        startAddModeBtn.classList.add('d-none');
+        startEditModeBtn.classList.remove('d-none');
+        deleteEventBtn.classList.remove('d-none');
+        setEditorVisible(false);
+        eventModal.show();
     }
 
-    calendarGrid.addEventListener('click', function (e) {
-        var chip = e.target.closest('.event-chip');
-        if (chip) {
-            var eventId = parseInt(chip.dataset.eventId, 10);
-            if (!eventId || !confirm('Видалити подію?')) {
-                return;
-            }
-
-            fetch('@Url.Action("DeleteEvent", "Admin")', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-                body: new URLSearchParams({ id: eventId.toString() })
-            })
+    function loadMonth(monthDate) {
+        var targetMonth = toMonthStart(monthDate);
+        fetch(getEventsUrl + '?month=' + encodeURIComponent(toIsoDate(targetMonth)))
             .then(function (r) {
                 if (!r.ok) {
-                    throw new Error('Delete failed');
+                    throw new Error('Get events failed');
                 }
                 return r.json();
             })
@@ -306,50 +408,119 @@
                 if (!data.success) {
                     return;
                 }
-                var dayCell = chip.closest('.calendar-day');
-                chip.remove();
-                var hasLeft = dayCell.querySelectorAll('.event-chip').length > 0;
-                dayCell.dataset.hasEvents = hasLeft ? '1' : '0';
-                if (!hasLeft && dayCell.dataset.inMonth === '1') {
-                    dayCell.classList.add('empty-current-month');
-                }
+                eventsData = data.events || [];
+                currentMonth = targetMonth;
+                renderCalendar(currentMonth, eventsData);
             })
             .catch(function () {
-                alert('Не вдалося видалити подію.');
+                alert('Не вдалося завантажити події для місяця.');
+            });
+    }
+
+    startAddModeBtn.addEventListener('click', function () {
+        setEditorVisible(true);
+        saveEventBtn.textContent = 'Зберегти';
+        setTimeout(function () { eventTitleInput.focus(); }, 120);
+    });
+
+    startEditModeBtn.addEventListener('click', function () {
+        setEditorVisible(true);
+        saveEventBtn.textContent = 'Зберегти';
+        setTimeout(function () { eventTitleInput.focus(); }, 120);
+    });
+
+    prevMonthBtn.addEventListener('click', function () {
+        loadMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+    });
+
+    nextMonthBtn.addEventListener('click', function () {
+        loadMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+    });
+
+    calendarGrid.addEventListener('click', function (e) {
+        var chip = e.target.closest('.event-chip');
+        if (chip) {
+            var eventId = parseInt(chip.dataset.eventId, 10);
+            if (!eventId) {
+                return;
+            }
+            openEditModal({
+                id: eventId,
+                title: chip.dataset.title || chip.textContent,
+                date: chip.dataset.date,
+                color: chip.dataset.color
             });
             return;
         }
 
         var dayCell = e.target.closest('.calendar-day');
-        if (!dayCell || dayCell.dataset.inMonth !== '1' || dayCell.dataset.hasEvents !== '0') {
+        if (!dayCell || dayCell.dataset.inMonth !== '1') {
             return;
         }
 
-        openEventModal(dayCell.dataset.date);
+        openCreateModal(dayCell.dataset.date);
+    });
+
+    deleteEventBtn.addEventListener('click', function () {
+        var eventId = parseInt(eventIdInput.value, 10);
+        if (!eventId || !confirm('Видалити подію?')) {
+            return;
+        }
+
+        fetch(deleteEventUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: new URLSearchParams({ id: eventId.toString() })
+        })
+        .then(function (r) {
+            if (!r.ok) {
+                throw new Error('Delete failed');
+            }
+            return r.json();
+        })
+        .then(function (data) {
+            if (!data.success) {
+                return;
+            }
+            eventsData = eventsData.filter(function (x) { return x.id !== eventId; });
+            renderCalendar(currentMonth, eventsData);
+            eventModal.hide();
+        })
+        .catch(function () {
+            alert('Не вдалося видалити подію.');
+        });
     });
 
     saveEventBtn.addEventListener('click', function () {
         var title = eventTitleInput.value.trim();
         var date = eventDateInput.value;
         var color = eventColorInput.value;
+        var eventId = parseInt(eventIdInput.value, 10);
 
         if (!title) {
             eventTitleInput.focus();
             return;
         }
 
-        fetch('@Url.Action("CreateEvent", "Admin")', {
+        var requestUrl = modalMode === 'edit' ? updateEventUrl : createEventUrl;
+        var payload = {
+            title: title,
+            date: date,
+            color: color
+        };
+
+        if (modalMode === 'edit' && eventId) {
+            payload.id = eventId.toString();
+        }
+
+        fetch(requestUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-            body: new URLSearchParams({
-                title: title,
-                date: date,
-                color: color
-            })
+            body: new URLSearchParams(payload)
         })
         .then(function (r) {
             if (!r.ok) {
-                throw new Error('Create failed');
+                throw new Error('Save failed');
             }
             return r.json();
         })
@@ -358,15 +529,27 @@
                 return;
             }
 
-            var dayCell = calendarGrid.querySelector('.calendar-day[data-date="' + data.date + '"]');
-            if (dayCell) {
-                appendEventToDay(dayCell, data);
+            eventsData = eventsData.filter(function (x) { return x.id !== data.id; });
+            eventsData.push(data);
+            eventsData.sort(function (a, b) {
+                if (a.date === b.date) {
+                    return (a.title || '').localeCompare(b.title || '');
+                }
+                return a.date.localeCompare(b.date);
+            });
+
+            if (data.date.substring(0, 7) !== toIsoDate(currentMonth).substring(0, 7)) {
+                loadMonth(new Date(data.date + 'T00:00:00'));
+            } else {
+                renderCalendar(currentMonth, eventsData);
             }
             eventModal.hide();
         })
         .catch(function () {
-            alert('Не вдалося додати подію.');
+            alert('Не вдалося зберегти подію.');
         });
     });
+
+    renderCalendar(currentMonth, eventsData);
 </script>
 }

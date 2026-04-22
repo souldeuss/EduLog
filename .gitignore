@@ -361,3 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/EduLog/Data/Шкільна програма_ від 1 до 11 класу - Шкільна програма_ від 1 до 11 класу.csv
+/EduLog/Data/Яке погодинне навантаження на кожен предмет_ - Яке погодинне навантаження на кожен предмет_.csv
