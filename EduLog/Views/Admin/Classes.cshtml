@@ -54,6 +54,7 @@
                 </button>
             </th>
             <th>Предметів</th>
+            <th>Класна кімната</th>
             <th></th>
         </tr>
     </thead>
@@ -62,6 +63,7 @@
         {
             var teacher = teachers.FirstOrDefault(t => t.Id == cls.TeacherId);
             var teacherName = teacher != null ? $"{teacher.Surname} {teacher.Name}" : "";
+            var classRoom = cls.Room?.Number ?? "—";
             <tr data-class-name="@cls.Name.ToLowerInvariant()"
                 data-class-sort-name="@cls.Name"
                 data-teacher-name="@teacherName.ToLowerInvariant()"
@@ -69,6 +71,7 @@
                 <td><strong>@cls.Name</strong></td>
                 <td>@(teacher != null ? teacherName : "—")</td>
                 <td>@(cls.ClassSubjects?.Count ?? 0)</td>
+                <td>@classRoom</td>
                 <td class="text-end">
                     <a asp-action="EditClass" asp-route-id="@cls.Id" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-pencil"></i>

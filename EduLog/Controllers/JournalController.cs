@@ -26,6 +26,47 @@ namespace EduLog.Controllers
             return _context.Teacher.FirstOrDefault(t => t.Id == user.TeacherId);
         }
 
+        public async Task<IActionResult> TeacherSchedule()
+        {
+            var teacher = await GetCurrentTeacherAsync();
+            if (teacher == null)
+            {
+                return RedirectToAction("Index", "Profile");
+            }
+
+            var currentYear = await _context.AcademicYear
+                .Where(y => y.SchoolId == teacher.SchoolId && y.IsCurrent && !y.IsArchived)
+                .OrderByDescending(y => y.StartDate)
+                .FirstOrDefaultAsync();
+
+            if (currentYear == null)
+            {
+                ViewData["ScheduleSlots"] = new List<TeacherScheduleSlotView>();
+                ViewData["SelectedYear"] = null;
+                return View();
+            }
+
+            var slots = await _context.ScheduleSlot
+                .Include(s => s.Subject)
+                .Include(s => s.Class)
+                .Where(s => s.TeacherId == teacher.Id && s.AcademicYearId == currentYear.Id)
+                .OrderBy(s => s.DayOfWeek)
+                .ThenBy(s => s.LessonNumber)
+                .Select(s => new TeacherScheduleSlotView
+                {
+                    DayOfWeek = s.DayOfWeek,
+                    LessonNumber = s.LessonNumber,
+                    SubjectName = s.Subject.Name,
+                    ClassName = s.Class.Name,
+                    Room = s.Room
+                })
+                .ToListAsync();
+
+            ViewData["ScheduleSlots"] = slots;
+            ViewData["SelectedYear"] = currentYear;
+            return View();
+        }
+
         public IActionResult Index(int classId, int subjectId, string viewMode = "week",
             int? month = null, int? year = null)
         {

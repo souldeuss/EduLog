@@ -1,0 +1,72 @@
+@using EduLog.Models
+@{
+    ViewData["Title"] = "Мій розклад";
+
+    var slots = ViewData["ScheduleSlots"] as List<TeacherScheduleSlotView> ?? new();
+    var selectedYear = ViewData["SelectedYear"] as AcademicYear;
+    string[] dayNames = { "Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця" };
+    var maxLesson = slots.Any() ? slots.Max(s => s.LessonNumber) : 0;
+}
+
+<h2 class="mb-3">Мій розклад</h2>
+@if (selectedYear != null)
+{
+    <div class="mb-3 text-muted">
+        Навчальний рік: <strong>@selectedYear.Name</strong>
+    </div>
+}
+
+@if (!slots.Any())
+{
+    <div class="alert alert-info">Розклад ще не сформовано.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-bordered align-middle text-center">
+            <thead>
+                <tr>
+                    <th>Урок</th>
+                    @for (var day = 1; day <= 5; day++)
+                    {
+                        <th>@dayNames[day - 1]</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @for (var lesson = 1; lesson <= maxLesson; lesson++)
+                {
+                    <tr>
+                        <th class="table-light">@lesson</th>
+                        @for (var day = 1; day <= 5; day++)
+                        {
+                            var daySlots = slots.Where(s => s.DayOfWeek == day && s.LessonNumber == lesson).ToList();
+                            if (daySlots.Count == 0)
+                            {
+                                <td></td>
+                            }
+                            else
+                            {
+                                <td>
+                                    @foreach (var slot in daySlots)
+                                    {
+                                        <div class="fw-semibold">@slot.SubjectName</div>
+                                        <div>@slot.ClassName</div>
+                                        @if (!string.IsNullOrWhiteSpace(slot.Room))
+                                        {
+                                            <div class="text-muted">Каб. @slot.Room</div>
+                                        }
+                                        @if (slot != daySlots.Last())
+                                        {
+                                            <hr class="my-1" />
+                                        }
+                                    }
+                                </td>
+                            }
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

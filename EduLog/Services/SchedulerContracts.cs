@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace EduLog.Services
 {
     public enum SchedulerMode
@@ -11,7 +13,7 @@ namespace EduLog.Services
     {
         public const string SectionName = "SchedulerApi";
 
-        public string BaseUrl { get; set; } = "http://localhost:5001";
+        public string BaseUrl { get; set; } = "http://127.0.0.1:8000";
         public int TimeoutSeconds { get; set; } = 120;
         public int RetryCount { get; set; } = 3;
     }
@@ -23,6 +25,11 @@ namespace EduLog.Services
         public int MaxDuplicatesPerDay { get; set; } = 2;
         public bool AllowGaps { get; set; }
         public int PlanningPeriodWeeks { get; set; } = 1;
+        [Range(10, 500)]
+        public int Iterations { get; set; } = 100;
+
+        [Range(0.000001, 0.1)]
+        public double LearningRate { get; set; } = 0.02;
     }
 
     public sealed class ScheduleSlotDto

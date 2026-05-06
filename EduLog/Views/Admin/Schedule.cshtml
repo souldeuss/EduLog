@@ -11,7 +11,10 @@
     var subjectsList = ViewData["Subjects"] as Microsoft.AspNetCore.Mvc.Rendering.SelectList;
     var schedulerModes = ViewData["SchedulerModes"] as List<EduLog.Services.SchedulerModeInfo> ?? new();
     var schedulerOptions = ViewData["SchedulerConfig"] as EduLog.Services.SchedulerConfigOptions ?? new();
+    var schedulerApiBaseUrl = ViewData["SchedulerApiBaseUrl"] as string ?? "http://127.0.0.1:8000";
     var lockedSlotIds = (ViewData["LockedSlotIds"] as IEnumerable<int>)?.ToHashSet() ?? new HashSet<int>();
+    var classOverview = ViewData["ClassOverview"] as List<EduLog.Models.Admin.ScheduleSubjectOverviewItem> ?? new();
+    var subjectColorMap = classOverview.ToDictionary(i => i.SubjectId, i => i.ColorHex ?? "#6C757D");
 
     var error = TempData["Error"] as string;
     var success = TempData["Success"] as string;
@@ -171,6 +174,98 @@
         height: 100%;
         background: linear-gradient(90deg, #0d6efd, #20c997);
     }
+
+    .schedule-layout .weekly-overview-wrap {
+        position: relative;
+    }
+
+    .weekly-overview-panel {
+        position: sticky;
+        top: 1rem;
+        border: 1px solid var(--bs-border-color);
+        border-radius: 1rem;
+        box-shadow: 0 .35rem 1.2rem rgba(0, 0, 0, .06);
+        background: var(--bs-body-bg);
+    }
+
+    .weekly-overview-list {
+        max-height: 68vh;
+        overflow-y: auto;
+    }
+
+    .subject-overview-item {
+        border: 1px solid var(--bs-border-color-translucent);
+        border-radius: .75rem;
+        padding: .65rem .75rem;
+        background: var(--bs-tertiary-bg);
+    }
+
+    .subject-overview-item.is-over {
+        border-color: rgba(220, 53, 69, .45);
+        background: rgba(220, 53, 69, .06);
+    }
+
+    .subject-overview-title {
+        font-weight: 600;
+        line-height: 1.2;
+    }
+
+    .subject-color-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+        border: 1px solid rgba(0, 0, 0, .12);
+    }
+
+    .subject-overview-counter {
+        font-size: .82rem;
+        font-weight: 600;
+    }
+
+    .subject-overview-status {
+        font-size: .75rem;
+        min-height: 1rem;
+    }
+
+    /* SortableJS visual states */
+    .drop-zone.sortable-over {
+        border-color: #86b7fe;
+        background: #eff6ff;
+    }
+
+    #subjectSidebar .subject-overview-item {
+        cursor: grab;
+        transition: box-shadow .15s, transform .15s;
+    }
+
+    #subjectSidebar .subject-overview-item:hover {
+        box-shadow: 0 3px 10px rgba(0, 0, 0, .1);
+        transform: translateY(-1px);
+    }
+
+    #subjectSidebar .subject-overview-item.sortable-chosen {
+        cursor: grabbing;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, .15);
+        transform: scale(1.02);
+        z-index: 10;
+    }
+
+    #subjectSidebar .subject-overview-item.sortable-ghost {
+        opacity: 0.35;
+    }
+
+    .drag-hint {
+        font-size: .73rem;
+        color: var(--bs-secondary-color);
+        margin-top: .2rem;
+    }
+
+    .remaining-badge {
+        font-size: .7rem;
+        font-weight: 600;
+        min-width: 1.6em;
+    }
 </style>
 
 <partial name="_AdminNav" />
@@ -224,8 +319,8 @@
 
     <div class="toolbar-separator d-none d-lg-block"></div>
 
-    <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#generateModal" @(selectedYear == null || selectedClass == null ? "disabled" : null)>
-        <i class="bi bi-stars"></i> Згенерувати розклад
+    <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#generateModal" @(selectedYear == null ? "disabled" : null)>
+        <i class="bi bi-stars"></i> Згенерувати розклад для всього року
     </button>
 
     <button id="saveChangesBtn" class="btn btn-primary d-none" type="button">
@@ -249,6 +344,10 @@
         <i class="bi bi-upload"></i> Імпорт
     </button>
 
+    <button id="clearScheduleBtn" class="btn btn-outline-danger" type="button" @(selectedYear == null ? "disabled" : null) data-bs-toggle="modal" data-bs-target="#clearScheduleModal">
+        <i class="bi bi-trash"></i> Очистити розклад
+    </button>
+
     <button id="discardChangesBtn" class="btn btn-danger d-none" type="button">
         <i class="bi bi-x-circle"></i> Скасувати всі зміни
     </button>
@@ -260,96 +359,163 @@
 }
 else
 {
-    <div class="schedule-board shadow-sm mb-4" id="scheduleBoard">
-        <div class="board-loading" id="boardLoading">
-            <div class="text-center">
-                <div class="spinner-border text-primary" role="status"></div>
-                <div class="mt-2 fw-semibold">Генеруємо розклад...</div>
-            </div>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-striped align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width:78px">Урок</th>
-                        @for (int d = 1; d <= 5; d++)
-                        {
-                            <th>
-                                <i class="bi @dayIcons[d - 1] text-primary"></i>
-                                @dayNames[d - 1]
-                            </th>
-                        }
-                    </tr>
-                </thead>
-                <tbody id="scheduleBody">
-                    @for (int lesson = 1; lesson <= 8; lesson++)
+    <div class="row g-3 schedule-layout mb-4">
+        <aside class="col-12 col-xl-3">
+            <div id="weeklyOverviewPanel" class="card weekly-overview-panel">
+                <div class="card-header bg-transparent border-0 pb-0">
+                    <h6 class="mb-1">Предмети</h6>
+                    <p class="text-muted small mb-0">@selectedClass.Name · Призначено / Потрібно</p>
+                    <p class="drag-hint mb-0"><i class="bi bi-arrows-move"></i> Перетягніть предмет у розклад</p>
+                </div>
+                <div class="card-body pt-3 weekly-overview-list d-flex flex-column gap-2" id="subjectSidebar">
+                    @if (classOverview.Any())
                     {
-                        <tr>
-                            <td class="fw-semibold text-center">@lesson</td>
-                            @for (int day = 1; day <= 5; day++)
-                            {
-                                var slot = slots.FirstOrDefault(s => s.DayOfWeek == day && s.LessonNumber == lesson);
-                                var hasConflict = slot != null && conflicts.ContainsKey(slot.Id);
-                                var conflictText = hasConflict ? string.Join(" | ", conflicts[slot!.Id]) : string.Empty;
-                                var isLocked = slot != null && lockedSlotIds.Contains(slot.Id);
-                                <td>
-                                    <div class="drop-zone"
-                                         data-day="@day"
-                                         data-lesson="@lesson"
-                                         data-slot-id="@(slot?.Id ?? 0)">
-                                        @if (slot != null)
-                                        {
-                                            <div class="lesson-card @(hasConflict ? "is-conflict" : "") @(isLocked ? "is-locked" : "")"
-                                                 draggable="@(isLocked ? "false" : "true")"
-                                                 data-slot-id="@slot.Id"
-                                                 data-day="@slot.DayOfWeek"
-                                                 data-lesson="@slot.LessonNumber"
-                                                 data-subject-id="@slot.SubjectId"
-                                                 data-teacher-id="@slot.TeacherId"
-                                                 data-subject-name="@slot.Subject?.Name"
-                                                 data-teacher-name="@slot.Teacher?.Surname"
-                                                 data-room="@slot.Room"
-                                                 data-conflict="@(hasConflict ? "1" : "0")"
-                                                 data-locked="@(isLocked ? "1" : "0")"
-                                                 title="@conflictText">
-                                                <div class="d-flex align-items-start gap-2">
-                                                    <span class="drag-handle">≡</span>
-                                                    <div class="flex-grow-1 overflow-hidden">
-                                                        <div class="lesson-card-subject">@slot.Subject?.Name</div>
-                                                        <div class="small text-muted">@slot.Teacher?.Surname</div>
-                                                        @if (!string.IsNullOrWhiteSpace(slot.Room))
-                                                        {
-                                                            <div class="small text-muted">каб. @slot.Room</div>
-                                                        }
-                                                    </div>
-                                                    <div class="d-flex flex-column align-items-end">
-                                                        @if (isLocked)
-                                                        {
-                                                            <span title="Locked">🔒</span>
-                                                        }
-                                                        @if (hasConflict)
-                                                        {
-                                                            <span title="Конфлікт">⚠️</span>
-                                                        }
-                                                    </div>
-                                                </div>
-                                                <div class="card-actions d-flex justify-content-end gap-1 mt-2">
-                                                    <button type="button" class="btn btn-sm btn-light border edit-slot-btn">✏️ Редагувати</button>
-                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-slot-btn">🗑️ Видалити</button>
-                                                </div>
-                                            </div>
-                                        }
-                                        else
-                                        {
-                                            <button type="button" class="btn btn-sm btn-outline-secondary add-slot-btn">+</button>
-                                        }
+                        @foreach (var item in classOverview)
+                        {
+                            var requiredLessons = Math.Max(0, item.RequiredLessons);
+                            var assignedLessons = Math.Max(0, item.AssignedLessons);
+                            var remaining = requiredLessons - assignedLessons;
+                            var progressPercent = requiredLessons > 0
+                                ? Math.Min(100, (int)Math.Round(assignedLessons * 100.0 / requiredLessons))
+                                : (assignedLessons > 0 ? 100 : 0);
+                            var isOverScheduled = assignedLessons > requiredLessons;
+                            var itemColor = item.ColorHex ?? "#6C757D";
+                            var remainingBadgeClass = isOverScheduled ? "bg-danger" : (remaining == 0 ? "bg-secondary" : "bg-primary");
+
+                            <div class="subject-overview-item @(isOverScheduled ? "is-over" : "")"
+                                 data-subject-id="@item.SubjectId"
+                                 data-subject-name="@item.SubjectName"
+                                 data-required="@requiredLessons"
+                                 data-assigned="@assignedLessons"
+                                 data-subject-color="@itemColor">
+                                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                    <div class="d-flex align-items-center gap-2 min-w-0">
+                                        <span class="subject-color-dot" style="background-color:@itemColor"></span>
+                                        <span class="subject-overview-title text-truncate">@item.SubjectName</span>
                                     </div>
-                                </td>
-                            }
-                        </tr>
+                                    <div class="d-flex flex-column align-items-end gap-1">
+                                        <span class="subject-overview-counter @(isOverScheduled ? "text-danger" : "text-muted")">@assignedLessons/@requiredLessons</span>
+                                        <span class="badge @remainingBadgeClass remaining-badge">@(remaining > 0 ? $"+{remaining}" : remaining.ToString())</span>
+                                    </div>
+                                </div>
+                                <div class="progress" style="height: 7px;">
+                                    <div class="progress-bar @(isOverScheduled ? "bg-danger" : "")"
+                                         role="progressbar"
+                                         style="width:@progressPercent%;@(isOverScheduled ? string.Empty : $"background-color:{itemColor};")"
+                                         aria-valuenow="@assignedLessons"
+                                         aria-valuemin="0"
+                                         aria-valuemax="@Math.Max(1, requiredLessons)"></div>
+                                </div>
+                                <div class="subject-overview-status mt-1 @(isOverScheduled ? "text-danger" : "text-muted")">
+                                    @(isOverScheduled ? $"Перевищення: +{assignedLessons - requiredLessons}" : "У межах норми")
+                                </div>
+                            </div>
+                        }
                     }
-                </tbody>
-            </table>
+                    else
+                    {
+                        <div class="alert alert-light border mb-0 small">Для цього класу ще не налаштовано предмети в навчальному плані.</div>
+                    }
+                </div>
+            </div>
+        </aside>
+
+        <div class="col-12 col-xl-9">
+            <div class="schedule-board shadow-sm" id="scheduleBoard">
+                <div class="board-loading" id="boardLoading">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <div class="mt-2 fw-semibold">Генеруємо розклад...</div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:78px">Урок</th>
+                                @for (int d = 1; d <= 5; d++)
+                                {
+                                    <th>
+                                        <i class="bi @dayIcons[d - 1] text-primary"></i>
+                                        @dayNames[d - 1]
+                                    </th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody id="scheduleBody">
+                            @for (int lesson = 1; lesson <= 8; lesson++)
+                            {
+                                <tr>
+                                    <td class="fw-semibold text-center">@lesson</td>
+                                    @for (int day = 1; day <= 5; day++)
+                                    {
+                                        var slot = slots.FirstOrDefault(s => s.DayOfWeek == day && s.LessonNumber == lesson);
+                                        var hasConflict = slot != null && conflicts.ContainsKey(slot.Id);
+                                        var conflictText = hasConflict ? string.Join(" | ", conflicts[slot!.Id]) : string.Empty;
+                                        var isLocked = slot != null && lockedSlotIds.Contains(slot.Id);
+                                        var subjectColor = slot != null && subjectColorMap.TryGetValue(slot.SubjectId, out var mappedColor)
+                                            ? mappedColor
+                                            : "#6C757D";
+                                        <td>
+                                            <div class="drop-zone"
+                                                 data-day="@day"
+                                                 data-lesson="@lesson"
+                                                 data-slot-id="@(slot?.Id ?? 0)">
+                                                @if (slot != null)
+                                                {
+                                                    <div class="lesson-card @(hasConflict ? "is-conflict" : "") @(isLocked ? "is-locked" : "")"
+                                                         data-slot-id="@slot.Id"
+                                                         data-day="@slot.DayOfWeek"
+                                                         data-lesson="@slot.LessonNumber"
+                                                         data-subject-id="@slot.SubjectId"
+                                                         data-teacher-id="@slot.TeacherId"
+                                                         data-subject-name="@slot.Subject?.Name"
+                                                         data-subject-color="@subjectColor"
+                                                         data-teacher-name="@slot.Teacher?.Surname"
+                                                         data-room="@slot.Room"
+                                                         data-conflict="@(hasConflict ? "1" : "0")"
+                                                         data-locked="@(isLocked ? "1" : "0")"
+                                                         title="@conflictText">
+                                                        <div class="d-flex align-items-start gap-2">
+                                                            <span class="drag-handle">≡</span>
+                                                            <div class="flex-grow-1 overflow-hidden">
+                                                                <div class="lesson-card-subject">@slot.Subject?.Name</div>
+                                                                <div class="small text-muted">@slot.Teacher?.Surname</div>
+                                                                @if (!string.IsNullOrWhiteSpace(slot.Room))
+                                                                {
+                                                                    <div class="small text-muted">каб. @slot.Room</div>
+                                                                }
+                                                            </div>
+                                                            <div class="d-flex flex-column align-items-end">
+                                                                @if (isLocked)
+                                                                {
+                                                                    <span title="Locked">🔒</span>
+                                                                }
+                                                                @if (hasConflict)
+                                                                {
+                                                                    <span title="Конфлікт">⚠️</span>
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                        <div class="card-actions d-flex justify-content-end gap-1 mt-2">
+                                                            <button type="button" class="btn btn-sm btn-light border edit-slot-btn">✏️ Редагувати</button>
+                                                            <button type="button" class="btn btn-sm btn-outline-danger delete-slot-btn">🗑️ Видалити</button>
+                                                        </div>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary add-slot-btn">+</button>
+                                                }
+                                            </div>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 }
@@ -428,10 +594,14 @@ else
                 <input type="hidden" name="options.MaxDuplicatesPerDay" value="@schedulerOptions.MaxDuplicatesPerDay" />
 
                 <div class="modal-header">
-                    <h5 class="modal-title">Генерація розкладу</h5>
+                    <h5 class="modal-title">Генерація розкладу для всіх класів</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="alert alert-info small mb-3">
+                        Генерація буде виконана для всіх класів вибраного навчального року. Поточний клас на сторінці впливає лише на перегляд.
+                    </div>
+
                     <div class="d-flex flex-column gap-2 mb-3">
                         @foreach (var mode in schedulerModes)
                         {
@@ -464,6 +634,16 @@ else
                                         <span id="maxLessonsValue">@schedulerOptions.MaxLessonsPerDay</span>
                                     </label>
                                     <input id="maxLessonsRange" class="form-range" type="range" min="3" max="8" name="options.MaxLessonsPerDay" value="@Math.Clamp(schedulerOptions.MaxLessonsPerDay, 3, 8)" />
+
+                                    <label class="form-label d-flex justify-content-between mt-3">
+                                        <span>К-сть ітерацій ШІ</span>
+                                        <span id="iterationsValue">@schedulerOptions.Iterations</span>
+                                    </label>
+                                    <input id="iterationsRange" class="form-range" type="range" min="10" max="500" step="10" name="options.Iterations" value="@Math.Clamp(schedulerOptions.Iterations, 10, 500)" />
+
+                                    <label class="form-label mt-3" for="learningRateInput">Learning rate</label>
+                                    <input id="learningRateInput" class="form-control" type="number" min="0.000001" max="0.1" step="0.000001" name="options.LearningRate" value="@schedulerOptions.LearningRate.ToString(System.Globalization.CultureInfo.InvariantCulture)" />
+                                    <div class="form-text">За замовчуванням: 0.02. Поле можна змінювати вручну.</div>
 
                                     <div class="form-check form-switch mt-3">
                                         <input class="form-check-input" type="checkbox" id="allowDuplicatesSwitch" name="options.AllowDuplicates" value="true" @(schedulerOptions.AllowDuplicates ? "checked" : null) />
@@ -534,6 +714,36 @@ else
             </div>
         </div>
     </div>
+
+    <div class="modal fade" id="clearScheduleModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form asp-action="ClearSchedule" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="yearId" value="@selectedYear.Id" />
+
+                    <div class="modal-header border-danger">
+                        <h5 class="modal-title text-danger">
+                            <i class="bi bi-exclamation-triangle"></i> Очищення розкладу
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Ви впевнені, що хочете видалити <strong>весь розклад</strong> для навчального року <strong>@selectedYear.Name</strong>?</p>
+                        <div class="alert alert-warning small mb-0">
+                            <i class="bi bi-info-circle"></i> Цю дію неможливо відмінити. Усі слоти розкладу будуть видалені.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash"></i> Очистити розклад
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 }
 
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
@@ -547,6 +757,7 @@ else
 </div>
 
 @section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
     <script>
         const DRAFT_KEY = 'schedule_draft';
         const dayNames = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця"];
@@ -563,18 +774,22 @@ else
         const importFileInput = document.getElementById('importFileInput');
         const importForm = document.getElementById('importForm');
         const generateForm = document.getElementById('generateForm');
+        const generateSubmitBtn = document.getElementById('generateSubmitBtn');
         const generateProgressWrap = document.getElementById('generateProgressWrap');
         const generateProgress = document.getElementById('generateProgress');
         const maxLessonsRange = document.getElementById('maxLessonsRange');
         const maxLessonsValue = document.getElementById('maxLessonsValue');
+        const iterationsRange = document.getElementById('iterationsRange');
+        const iterationsValue = document.getElementById('iterationsValue');
+        const schedulerApiBaseUrl = '@schedulerApiBaseUrl';
+        const boardLoadingMessage = boardLoading ? boardLoading.querySelector('.fw-semibold') : null;
         const slotForm = document.getElementById('slotForm');
         const modalDeleteBtn = document.getElementById('modalDeleteBtn');
         const slotModalEl = document.getElementById('slotModal');
+        const weeklyOverviewPanel = document.getElementById('weeklyOverviewPanel');
 
         let unsavedChanges = false;
-        let activeDraggedCard = null;
         let activeEditCard = null;
-        let isDropSaving = false;
 
         function getAntiForgeryToken() {
             return document.querySelector('#slotForm input[name="__RequestVerificationToken"]')?.value
@@ -595,14 +810,46 @@ else
             toast.show();
         }
 
+        function normalizeHexColor(color) {
+            if (!color) return null;
+            const trimmed = String(color).trim();
+            if (!trimmed) return null;
+            const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+            return /^#[0-9A-Fa-f]{6}$/.test(withHash) ? withHash : null;
+        }
+
+        function hexToRgba(hex, alpha) {
+            const normalized = normalizeHexColor(hex);
+            if (!normalized) return null;
+            const r = parseInt(normalized.slice(1, 3), 16);
+            const g = parseInt(normalized.slice(3, 5), 16);
+            const b = parseInt(normalized.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
         function generateSubjectColor(subjectName) {
-            if (!subjectName) return 'hsl(200 75% 92%)';
+            if (!subjectName) return '#6C757D';
             let hash = 0;
             for (let i = 0; i < subjectName.length; i++) {
                 hash = subjectName.charCodeAt(i) + ((hash << 5) - hash);
             }
-            const hue = Math.abs(hash) % 360;
-            return `hsl(${hue} 75% 92%)`;
+
+            const r = 80 + (Math.abs(hash) % 128);
+            const g = 80 + (Math.abs(hash >> 7) % 128);
+            const b = 80 + (Math.abs(hash >> 13) % 128);
+            return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+        }
+
+        function getOverviewItemBySubjectId(subjectId) {
+            if (!weeklyOverviewPanel || !subjectId) return null;
+            return weeklyOverviewPanel.querySelector(`.subject-overview-item[data-subject-id="${subjectId}"]`);
+        }
+
+        function resolveSubjectColor(subjectId, subjectName) {
+            const overviewItem = getOverviewItemBySubjectId(subjectId);
+            const fromOverview = normalizeHexColor(overviewItem?.dataset.subjectColor || '');
+            const fromName = normalizeHexColor(generateSubjectColor(subjectName || ''));
+            return fromOverview || fromName || '#6C757D';
         }
 
         function renderConflictBadge(count) {
@@ -653,6 +900,58 @@ else
             markUnsavedChanges(false);
         }
 
+        function updateWeeklyOverviewPanel() {
+            if (!weeklyOverviewPanel) return;
+
+            const assignedBySubject = {};
+            document.querySelectorAll('.lesson-card').forEach(card => {
+                const subjectId = Number(card.dataset.subjectId || 0);
+                if (!subjectId) return;
+                assignedBySubject[subjectId] = (assignedBySubject[subjectId] || 0) + 1;
+            });
+
+            weeklyOverviewPanel.querySelectorAll('.subject-overview-item').forEach(item => {
+                const subjectId = Number(item.dataset.subjectId || 0);
+                const required = Math.max(0, Number(item.dataset.required || 0));
+                const assigned = Math.max(0, Number(assignedBySubject[subjectId] || 0));
+                const isOver = assigned > required;
+                const progressPercent = required > 0
+                    ? Math.min(100, Math.round((assigned * 100) / required))
+                    : (assigned > 0 ? 100 : 0);
+
+                item.dataset.assigned = String(assigned);
+                item.classList.toggle('is-over', isOver);
+
+                const counter = item.querySelector('.subject-overview-counter');
+                if (counter) {
+                    counter.textContent = `${assigned}/${required}`;
+                    counter.classList.toggle('text-danger', isOver);
+                    counter.classList.toggle('text-muted', !isOver);
+                }
+
+                const progress = item.querySelector('.progress-bar');
+                if (progress) {
+                    progress.style.width = `${progressPercent}%`;
+                    progress.classList.toggle('bg-danger', isOver);
+                    if (isOver) {
+                        progress.style.backgroundColor = '';
+                    } else {
+                        const color = normalizeHexColor(item.dataset.subjectColor || '');
+                        progress.style.backgroundColor = color || '';
+                    }
+                }
+
+                const status = item.querySelector('.subject-overview-status');
+                if (status) {
+                    status.textContent = isOver
+                        ? `Перевищення: +${assigned - required}`
+                        : 'У межах норми';
+                    status.classList.toggle('text-danger', isOver);
+                    status.classList.toggle('text-muted', !isOver);
+                }
+            });
+        }
+
         function updateStats() {
             const dayCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
             document.querySelectorAll('.lesson-card').forEach(card => {
@@ -671,12 +970,95 @@ else
                 if (fill) fill.style.width = `${Math.round(count * 100 / max)}%`;
                 if (label) label.textContent = count;
             });
+
+            updateWeeklyOverviewPanel();
+        }
+
+        function describeGenerationStage(status) {
+            const stage = String(status || '').toLowerCase();
+            if (stage.startsWith('pending')) return 'Очікуємо запуск...';
+            if (stage.includes('load')) return 'Завантажуємо дані...';
+            if (stage.includes('env')) return 'Готуємо середовище...';
+            if (stage.includes('train')) return 'Навчаємо модель...';
+            if (stage.includes('export')) return 'Формуємо розклад...';
+            if (stage.includes('save')) return 'Зберігаємо результат...';
+            if (stage === 'completed') return 'Готово';
+            if (stage === 'failed') return 'Помилка генерації';
+            if (stage === 'stopped') return 'Зупинено';
+            return 'Обробка...';
+        }
+
+        function setGenerationProgress(progress, label) {
+            if (generateProgressWrap) {
+                generateProgressWrap.classList.remove('d-none');
+            }
+
+            if (generateProgress) {
+                const clamped = Math.max(0, Math.min(100, Math.round(progress)));
+                generateProgress.style.width = `${clamped}%`;
+                generateProgress.textContent = `${clamped}%`;
+            }
+
+            if (boardLoadingMessage && label) {
+                boardLoadingMessage.textContent = label;
+            }
+        }
+
+        async function fetchGenerationStatus(generationId) {
+            const response = await fetch(`${schedulerApiBaseUrl}/api/schedule/status/${generationId}`, {
+                headers: { 'Accept': 'application/json' }
+            });
+
+            if (!response.ok) {
+                throw new Error('Не вдалося отримати статус генерації.');
+            }
+
+            return response.json();
+        }
+
+        async function pollGenerationStatus(generationId, expectedIterations) {
+            let lastStatus = null;
+            while (true) {
+                const status = await fetchGenerationStatus(generationId);
+                const totalIterations = Number(status.iterations || expectedIterations || 1);
+                const currentIteration = Number(status.current_iteration || 0);
+                const percent = totalIterations > 0
+                    ? Math.min(99, Math.round((currentIteration / totalIterations) * 100))
+                    : 0;
+                const stageLabel = describeGenerationStage(status.status);
+
+                setGenerationProgress(status.status === 'completed' ? 100 : percent, `${stageLabel} (${currentIteration}/${totalIterations})`);
+
+                if (status.status !== lastStatus) {
+                    lastStatus = status.status;
+                    showToast(`${stageLabel}`, false);
+                }
+
+                if (status.status === 'completed') {
+                    setGenerationProgress(100, 'Готово');
+                    return status;
+                }
+
+                if (status.status === 'failed' || status.status === 'stopped') {
+                    throw new Error(status.error_message || 'Генерацію зупинено або вона завершилась з помилкою.');
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 1200));
+            }
         }
 
         function initLessonCard(card) {
             if (!card) return;
-            card.style.background = generateSubjectColor(card.dataset.subjectName || '');
-            card.style.setProperty('--subject-hue', '200');
+
+            const subjectId = Number(card.dataset.subjectId || 0);
+            const subjectName = card.dataset.subjectName || '';
+            const subjectColor = resolveSubjectColor(subjectId, subjectName);
+            card.dataset.subjectColor = subjectColor;
+
+            const cardBg = hexToRgba(subjectColor, 0.22);
+            const cardBorder = hexToRgba(subjectColor, 0.6);
+            card.style.background = cardBg || '#e9ecef';
+            card.style.borderColor = cardBorder || 'rgba(0, 0, 0, .08)';
         }
 
         function buildCard(slotData, hasConflict = false, isLocked = false) {
@@ -689,6 +1071,7 @@ else
             card.dataset.subjectId = slotData.subjectId;
             card.dataset.teacherId = slotData.teacherId;
             card.dataset.subjectName = slotData.subjectName || '';
+            card.dataset.subjectColor = slotData.subjectColor || '';
             card.dataset.teacherName = slotData.teacherName || '';
             card.dataset.room = slotData.room || '';
             card.dataset.locked = isLocked ? '1' : '0';
@@ -805,76 +1188,6 @@ else
             modal.show();
         }
 
-        async function moveLessonCardToZone(card, targetZone) {
-            if (!card || !targetZone) {
-                return;
-            }
-
-            if (isDropSaving || card.dataset.movePending === '1') {
-                return;
-            }
-
-            const sourceZone = card.closest('.drop-zone');
-            const targetDay = Number(targetZone.dataset.day);
-            const targetLesson = Number(targetZone.dataset.lesson);
-            const sourceDay = Number(card.dataset.day);
-            const sourceLesson = Number(card.dataset.lesson);
-
-            if (!sourceZone || (sourceDay === targetDay && sourceLesson === targetLesson)) {
-                return;
-            }
-
-            const existingTargetCard = targetZone.querySelector('.lesson-card');
-            if (existingTargetCard && existingTargetCard !== card) {
-                targetZone.classList.add('shake');
-                setTimeout(() => targetZone.classList.remove('shake'), 350);
-                showToast('Ця клітинка вже зайнята.', true);
-                return;
-            }
-
-            isDropSaving = true;
-            card.dataset.movePending = '1';
-
-            try {
-                const payload = await saveSlotRequest({
-                    slotId: card.dataset.slotId,
-                    yearId: '@(selectedYear?.Id ?? 0)',
-                    classId: '@(selectedClass?.Id ?? 0)',
-                    dayOfWeek: targetDay,
-                    lessonNumber: targetLesson,
-                    subjectId: card.dataset.subjectId,
-                    teacherId: card.dataset.teacherId,
-                    room: card.dataset.room || ''
-                });
-
-                targetZone.appendChild(card);
-                card.dataset.slotId = String(payload.slotId || card.dataset.slotId || '');
-                card.dataset.day = String(targetDay);
-                card.dataset.lesson = String(targetLesson);
-
-                targetZone.dataset.slotId = card.dataset.slotId;
-                sourceZone.dataset.slotId = sourceZone.querySelector('.lesson-card')?.dataset.slotId || '0';
-
-                updateCellButton(targetZone);
-                updateCellButton(sourceZone);
-
-                registerDraftEvent({
-                    type: 'move',
-                    slotId: card.dataset.slotId,
-                    from: { day: sourceDay, lesson: sourceLesson },
-                    to: { day: targetDay, lesson: targetLesson }
-                });
-                updateStats();
-            } catch (error) {
-                targetZone.classList.add('shake');
-                setTimeout(() => targetZone.classList.remove('shake'), 350);
-                showToast(error.message, true);
-            } finally {
-                isDropSaving = false;
-                card.dataset.movePending = '0';
-            }
-        }
-
         function attachBoardEvents() {
             if (!scheduleBody) return;
 
@@ -917,42 +1230,103 @@ else
                 }
             });
 
-            scheduleBody.addEventListener('dragstart', (event) => {
-                const card = event.target.closest('.lesson-card');
-                if (!card || card.dataset.locked === '1') {
-                    event.preventDefault();
-                    return;
-                }
+        }
 
-                activeDraggedCard = card;
-                event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/plain', card.dataset.slotId || '');
-            });
+        function initSortable() {
+            if (typeof Sortable === 'undefined') return;
 
-            scheduleBody.addEventListener('dragend', () => {
-                activeDraggedCard = null;
-                document.querySelectorAll('.drop-zone').forEach(zone => zone.classList.remove('drop-highlight'));
-            });
+            const sidebar = document.getElementById('subjectSidebar');
+            if (sidebar) {
+                new Sortable(sidebar, {
+                    group: { name: 'subjects', pull: 'clone', put: false },
+                    sort: false,
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    filter: '.alert',
+                    onClone: function (evt) {
+                        const clone = evt.clone;
+                        const subjectName = clone.querySelector('.subject-overview-title')?.textContent?.trim() || '';
+                        const color = clone.dataset.subjectColor || '#6C757D';
+                        const bg = hexToRgba(color, 0.2) || '#e9ecef';
+                        const border = hexToRgba(color, 0.6) || 'rgba(0,0,0,.08)';
+                        clone.style.cssText = `padding:.5rem .75rem;border-radius:.75rem;border:1px solid ${border};background:${bg};font-weight:600;font-size:.9rem;`;
+                        clone.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${normalizeHexColor(color) || color};margin-right:.4rem;vertical-align:middle"></span>${subjectName}`;
+                    }
+                });
+            }
 
-            scheduleBody.addEventListener('dragover', (event) => {
-                const zone = event.target.closest('.drop-zone');
-                if (!zone || !activeDraggedCard) return;
-                event.preventDefault();
-                zone.classList.add('drop-highlight');
-            });
+            document.querySelectorAll('.drop-zone').forEach(zone => {
+                new Sortable(zone, {
+                    group: {
+                        name: 'schedule',
+                        put: function (to, from) {
+                            const isFromSidebar = from.el.id === 'subjectSidebar';
+                            const isFromGrid = from.el.classList.contains('drop-zone');
+                            const hasCard = !!to.el.querySelector('.lesson-card');
+                            return !hasCard && (isFromSidebar || isFromGrid);
+                        }
+                    },
+                    sort: false,
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    onAdd: async function (evt) {
+                        const item = evt.item;
+                        const targetZone = evt.to;
+                        const sourceZone = evt.from;
+                        const targetDay = Number(targetZone.dataset.day);
+                        const targetLesson = Number(targetZone.dataset.lesson);
 
-            scheduleBody.addEventListener('dragleave', (event) => {
-                const zone = event.target.closest('.drop-zone');
-                if (!zone) return;
-                zone.classList.remove('drop-highlight');
-            });
+                        // Dropped from subject sidebar — remove clone and open modal
+                        if (sourceZone.id === 'subjectSidebar') {
+                            const subjectId = Number(item.dataset.subjectId || 0);
+                            item.remove();
+                            updateCellButton(targetZone);
+                            if (subjectId && slotModalEl) {
+                                openSlot(targetDay, targetLesson, 0, subjectId, 0, '', null);
+                            }
+                            return;
+                        }
 
-            scheduleBody.addEventListener('drop', async (event) => {
-                const zone = event.target.closest('.drop-zone');
-                if (!zone || !activeDraggedCard) return;
-                event.preventDefault();
-                zone.classList.remove('drop-highlight');
-                await moveLessonCardToZone(activeDraggedCard, zone);
+                        // Moved from another grid zone — call save API
+                        if (item.classList.contains('lesson-card')) {
+                            if (targetZone === sourceZone) return;
+                            const originalDay = Number(item.dataset.day);
+                            const originalLesson = Number(item.dataset.lesson);
+                            item.dataset.day = String(targetDay);
+                            item.dataset.lesson = String(targetLesson);
+
+                            try {
+                                const payload = await saveSlotRequest({
+                                    slotId: item.dataset.slotId,
+                                    yearId: '@(selectedYear?.Id ?? 0)',
+                                    classId: '@(selectedClass?.Id ?? 0)',
+                                    dayOfWeek: targetDay,
+                                    lessonNumber: targetLesson,
+                                    subjectId: item.dataset.subjectId,
+                                    teacherId: item.dataset.teacherId,
+                                    room: item.dataset.room || ''
+                                });
+
+                                item.dataset.slotId = String(payload.slotId || item.dataset.slotId);
+                                targetZone.dataset.slotId = item.dataset.slotId;
+                                sourceZone.dataset.slotId = '0';
+                                updateCellButton(targetZone);
+                                updateCellButton(sourceZone);
+                                registerDraftEvent({ type: 'move', slotId: item.dataset.slotId, from: { day: originalDay, lesson: originalLesson }, to: { day: targetDay, lesson: targetLesson } });
+                                updateStats();
+                                showToast('Урок переміщено.');
+                            } catch (error) {
+                                item.dataset.day = String(originalDay);
+                                item.dataset.lesson = String(originalLesson);
+                                sourceZone.appendChild(item);
+                                updateCellButton(targetZone);
+                                updateCellButton(sourceZone);
+                                showToast(error.message, true);
+                            }
+                        }
+                    }
+                });
             });
         }
 
@@ -967,6 +1341,7 @@ else
             }
 
             attachBoardEvents();
+            initSortable();
 
             if (saveChangesBtn) {
                 saveChangesBtn.addEventListener('click', () => {
@@ -997,21 +1372,57 @@ else
                 });
             }
 
+            if (iterationsRange && iterationsValue) {
+                iterationsRange.addEventListener('input', () => {
+                    iterationsValue.textContent = iterationsRange.value;
+                });
+            }
+
             if (generateForm) {
-                generateForm.addEventListener('submit', () => {
-                    if (generateProgressWrap && generateProgress) {
-                        generateProgressWrap.classList.remove('d-none');
-                        let progress = 0;
-                        const timer = setInterval(() => {
-                            progress = Math.min(progress + 12, 92);
-                            generateProgress.style.width = `${progress}%`;
-                            generateProgress.textContent = `${progress}%`;
-                            if (progress >= 92) clearInterval(timer);
-                        }, 220);
+                generateForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+
+                    if (generateSubmitBtn) {
+                        generateSubmitBtn.disabled = true;
                     }
 
-                    if (boardLoading) {
-                        boardLoading.classList.add('active');
+                    try {
+                        setGenerationProgress(0, 'Запускаємо генерацію...');
+
+                        if (boardLoading) {
+                            boardLoading.classList.add('active');
+                        }
+
+                        const response = await fetch('@Url.Action("GenerateAiSchedule", "Admin")', {
+                            method: 'POST',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: new FormData(generateForm)
+                        });
+
+                        const payload = await response.json();
+                        if (!response.ok || !payload.success) {
+                            throw new Error(payload.message || 'Помилка запуску генерації.');
+                        }
+
+                        showToast('Генерацію запущено. Відстежуємо прогрес...');
+                        await pollGenerationStatus(payload.generationId, payload.iterations);
+                        showToast('Розклад згенеровано. Завершуємо збереження...');
+
+                        setTimeout(() => window.location.reload(), 3500);
+                    } catch (error) {
+                        showToast(error.message, true);
+                        if (boardLoadingMessage) {
+                            boardLoadingMessage.textContent = 'Не вдалося запустити генерацію.';
+                        }
+                        if (boardLoading) {
+                            boardLoading.classList.remove('active');
+                        }
+                    } finally {
+                        if (generateSubmitBtn) {
+                            generateSubmitBtn.disabled = false;
+                        }
                     }
                 });
             }

@@ -6,7 +6,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Text.RegularExpressions;
 
 namespace EduLog.Controllers
@@ -20,6 +22,8 @@ namespace EduLog.Controllers
         private readonly IEmailService _emailService;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<AdminController> _logger;
+        private readonly SchedulerApiOptions _schedulerApiOptions;
+        private readonly IServiceScopeFactory _serviceScopeFactory;
 
         public AdminController(
             EduLogContext context,
@@ -27,7 +31,9 @@ namespace EduLog.Controllers
             ISchedulerService schedulerService,
             IEmailService emailService,
             UserManager<ApplicationUser> userManager,
-            ILogger<AdminController> logger)
+            ILogger<AdminController> logger,
+            IOptions<SchedulerApiOptions> schedulerApiOptions,
+            IServiceScopeFactory serviceScopeFactory)
         {
             _context = context;
             _tenantService = tenantService;
@@ -35,6 +41,8 @@ namespace EduLog.Controllers
             _emailService = emailService;
             _userManager = userManager;
             _logger = logger;
+            _schedulerApiOptions = schedulerApiOptions.Value;
+            _serviceScopeFactory = serviceScopeFactory;
         }
 
         // ───────── Dashboard ─────────
@@ -156,7 +164,10 @@ namespace EduLog.Controllers
         // ───────── Classes ─────────
         public IActionResult Classes()
         {
-            var classes = _context.Class.Include(c => c.ClassSubjects).ToList();
+            var classes = _context.Class
+                .Include(c => c.Room)
+                .Include(c => c.ClassSubjects)
+                .ToList();
             var teachers = _context.Teacher.ToList();
             var templates = _context.ClassTemplate
                 .Include(t => t.TemplateSubjects)
@@ -210,8 +221,20 @@ namespace EduLog.Controllers
                 .FirstOrDefault(c => c.Id == id);
             if (cls == null) return NotFound();
 
+            var occupiedRoomIds = _context.Class
+                .Where(c => c.Id != id && c.RoomId.HasValue)
+                .Select(c => c.RoomId!.Value)
+                .Distinct()
+                .ToHashSet();
+
+            var availableRooms = _context.Room
+                .OrderBy(r => r.Number)
+                .AsEnumerable()
+                .Where(r => !occupiedRoomIds.Contains(r.Id) || r.Id == cls.RoomId)
+                .ToList();
+
             ViewData["Teachers"] = new SelectList(_context.Teacher.ToList(), "Id", "Surname", cls.TeacherId);
-            ViewData["Rooms"] = new SelectList(_context.Room.OrderBy(r => r.Number).ToList(), "Id", "Number", cls.RoomId);
+            ViewData["Rooms"] = new SelectList(availableRooms, "Id", "Number", cls.RoomId);
             ViewData["AllSubjects"] = _context.Subject.ToList();
             return View(cls);
         }
@@ -222,6 +245,18 @@ namespace EduLog.Controllers
         {
             var cls = await _context.Class.FindAsync(id);
             if (cls == null) return NotFound();
+
+            if (roomId.HasValue)
+            {
+                var roomTaken = await _context.Class.AnyAsync(c => c.Id != id
+                    && c.SchoolId == cls.SchoolId
+                    && c.RoomId == roomId.Value);
+                if (roomTaken)
+                {
+                    TempData["Error"] = "Цей кабінет уже призначено іншому класу.";
+                    return RedirectToAction(nameof(EditClass), new { id });
+                }
+            }
 
             cls.Name = name?.Trim() ?? cls.Name;
             cls.TeacherId = teacherId;
@@ -311,7 +346,7 @@ namespace EduLog.Controllers
             var classes = await _context.Class.OrderBy(c => c.Name).ToListAsync();
             if (!classes.Any())
             {
-                TempData["Error"] = "Спочатку створіть класи.";
+                TempData["Error"] = "Спочатку створіть Klaси.";
                 return RedirectToAction(nameof(Classes));
             }
 
@@ -883,8 +918,15 @@ namespace EduLog.Controllers
             var subject = await _context.Subject.FindAsync(id);
             if (subject == null) return NotFound();
 
-            var bindings = _context.ClassSubject.Where(cs => cs.SubjectId == id);
-            _context.ClassSubject.RemoveRange(bindings);
+            var classBindings = _context.ClassSubject.Where(cs => cs.SubjectId == id);
+            var teacherBindings = _context.SubjectTeacher.Where(st => st.SubjectId == id);
+            var templateBindings = _context.TemplateSubject.Where(ts => ts.SubjectId == id);
+            var scheduleSlots = _context.ScheduleSlot.Where(s => s.SubjectId == id);
+
+            _context.ClassSubject.RemoveRange(classBindings);
+            _context.SubjectTeacher.RemoveRange(teacherBindings);
+            _context.TemplateSubject.RemoveRange(templateBindings);
+            _context.ScheduleSlot.RemoveRange(scheduleSlots);
             _context.Subject.Remove(subject);
             await _context.SaveChangesAsync();
             return RedirectToAction(nameof(Subjects));
@@ -1062,126 +1104,6 @@ namespace EduLog.Controllers
             return Json(new { success = true });
         }
 
-        [HttpPost]
-        public async Task<IActionResult> BulkCreateSubjects([FromBody] List<BulkSubjectItem> items)
-        {
-            if (items == null || !items.Any())
-                return Json(new { success = false, error = "Список порожній" });
-
-            int created = 0;
-            foreach (var item in items)
-            {
-                if (!string.IsNullOrWhiteSpace(item.Name) && item.TeacherId > 0)
-                {
-                    var subject = new Subject { Name = item.Name.Trim(), TeacherId = item.TeacherId };
-                    _context.Subject.Add(subject);
-                    await _context.SaveChangesAsync();
-
-                    _context.SubjectTeacher.Add(new SubjectTeacher
-                    {
-                        SubjectId = subject.Id,
-                        TeacherId = item.TeacherId
-                    });
-                    created++;
-                }
-            }
-            await _context.SaveChangesAsync();
-            return Json(new { success = true, created });
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> ImportSubjects(IFormFile file)
-        {
-            if (file == null || file.Length == 0)
-                return Json(new { success = false, error = "Файл порожній" });
-
-            var rows = new List<ImportSubjectRow>();
-            using var stream = file.OpenReadStream();
-
-            if (file.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-            {
-                using var reader = new StreamReader(stream);
-                string? line;
-                bool first = true;
-                while ((line = await reader.ReadLineAsync()) != null)
-                {
-                    if (first) { first = false; continue; }
-                    var parts = line.Split(new[] { ',', ';', '\t' }, StringSplitOptions.TrimEntries);
-                    if (parts.Length >= 1 && !string.IsNullOrWhiteSpace(parts[0]))
-                    {
-                        rows.Add(new ImportSubjectRow
-                        {
-                            Name = parts[0],
-                            TeacherName = parts.Length > 1 ? parts[1] : "",
-                            ClassName = parts.Length > 2 ? parts[2] : ""
-                        });
-                    }
-                }
-            }
-            else
-            {
-                using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
-                var sheet = workbook.Worksheets.First();
-                var rowCount = sheet.LastRowUsed()?.RowNumber() ?? 0;
-                for (int i = 2; i <= rowCount; i++)
-                {
-                    var name = sheet.Cell(i, 1).GetString().Trim();
-                    var teacher = sheet.Cell(i, 2).GetString().Trim();
-                    var className = sheet.Cell(i, 3).GetString().Trim();
-                    if (!string.IsNullOrEmpty(name))
-                    {
-                        rows.Add(new ImportSubjectRow { Name = name, TeacherName = teacher, ClassName = className });
-                    }
-                }
-            }
-
-            return Json(new { success = true, rows });
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> ImportSubjectsConfirm([FromBody] List<ImportSubjectRow> rows)
-        {
-            if (rows == null || !rows.Any())
-                return Json(new { success = false, error = "Список порожній" });
-
-            var teachers = await _context.Teacher.ToListAsync();
-            var classes = await _context.Class.ToListAsync();
-            int created = 0;
-
-            foreach (var row in rows)
-            {
-                if (string.IsNullOrWhiteSpace(row.Name)) continue;
-
-                var teacher = teachers.FirstOrDefault(t =>
-                    $"{t.Surname} {t.Name}" == row.TeacherName ||
-                    $"{t.Surname} {t.Name} {t.Patronymic}" == row.TeacherName ||
-                    t.Surname == row.TeacherName);
-                if (teacher == null) continue;
-
-                var subject = new Subject { Name = row.Name.Trim(), TeacherId = teacher.Id };
-                _context.Subject.Add(subject);
-                await _context.SaveChangesAsync();
-
-                _context.SubjectTeacher.Add(new SubjectTeacher
-                {
-                    SubjectId = subject.Id,
-                    TeacherId = teacher.Id
-                });
-
-                if (!string.IsNullOrWhiteSpace(row.ClassName))
-                {
-                    var cls = classes.FirstOrDefault(c => c.Name == row.ClassName.Trim());
-                    if (cls != null)
-                    {
-                        _context.ClassSubject.Add(new ClassSubject { ClassId = cls.Id, SubjectId = subject.Id });
-                    }
-                }
-                created++;
-            }
-            await _context.SaveChangesAsync();
-            return Json(new { success = true, created });
-        }
-
         // ───────── Academic Years ─────────
         public IActionResult AcademicYears()
         {
@@ -1234,6 +1156,7 @@ namespace EduLog.Controllers
         // ───────── Schedule ─────────
         public async Task<IActionResult> Schedule(int? yearId, int? classId)
         {
+            var schoolId = _tenantService.SchoolId;
             var years = _context.AcademicYear.Where(y => !y.IsArchived).OrderByDescending(y => y.StartDate).ToList();
             var classes = _context.Class.OrderBy(c => c.Name).ToList();
             var schedulerModes = await _schedulerService.GetAvailableModesAsync(HttpContext.RequestAborted);
@@ -1248,6 +1171,7 @@ namespace EduLog.Controllers
 
             var slots = new List<ScheduleSlot>();
             var allSlots = new List<ScheduleSlot>();
+            var classOverview = new List<ScheduleSubjectOverviewItem>();
 
             if (selectedYear != null)
             {
@@ -1255,12 +1179,34 @@ namespace EduLog.Controllers
                     .Include(s => s.Class)
                     .Include(s => s.Subject)
                     .Include(s => s.Teacher)
-                    .Where(s => s.AcademicYearId == selectedYear.Id)
+                    .Where(s => s.AcademicYearId == selectedYear.Id
+                        && (!schoolId.HasValue || s.SchoolId == schoolId.Value || s.SchoolId == 0))
                     .ToList();
 
                 if (selectedClass != null)
                 {
                     slots = allSlots.Where(s => s.ClassId == selectedClass.Id).ToList();
+
+                    var classSubjects = await _context.ClassSubject
+                        .Where(cs => cs.ClassId == selectedClass.Id)
+                        .Select(cs => cs.Subject)
+                        .OrderBy(s => s.Name)
+                        .ToListAsync();
+
+                    classOverview = classSubjects
+                        .Select(subject =>
+                        {
+                            var assignedLessons = slots.Count(s => s.SubjectId == subject.Id);
+                            return new ScheduleSubjectOverviewItem
+                            {
+                                SubjectId = subject.Id,
+                                SubjectName = subject.Name,
+                                RequiredLessons = Math.Max(0, subject.HoursPerWeek),
+                                AssignedLessons = assignedLessons,
+                                ColorHex = NormalizeHexColor(GenerateDeterministicHexColor(subject.Name))
+                            };
+                        })
+                        .ToList();
                 }
             }
 
@@ -1275,8 +1221,10 @@ namespace EduLog.Controllers
             ViewData["Conflicts"] = conflicts;
             ViewData["Teachers"] = new SelectList(_context.Teacher.ToList(), "Id", "Surname");
             ViewData["Subjects"] = new SelectList(_context.Subject.ToList(), "Id", "Name");
+            ViewData["ClassOverview"] = classOverview;
             ViewData["SchedulerModes"] = schedulerModes;
             ViewData["SchedulerConfig"] = new SchedulerConfigOptions();
+            ViewData["SchedulerApiBaseUrl"] = _schedulerApiOptions.BaseUrl;
 
             return View();
         }
@@ -1290,25 +1238,93 @@ namespace EduLog.Controllers
             SchedulerConfigOptions options,
             CancellationToken cancellationToken)
         {
-            return await GenerateAndPersistScheduleAsync(yearId, classId, mode, options, mergeExisting: false, cancellationToken);
-        }
+            if (string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase))
+            {
+                var schoolId = _tenantService.SchoolId;
+                if (schoolId == null)
+                {
+                    return BadRequest(new { success = false, message = "School is not selected." });
+                }
 
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> ApplyGeneratedSchedule(
-            int yearId,
-            int? classId,
-            SchedulerMode mode,
-            SchedulerConfigOptions options,
-            bool mergeExisting,
-            CancellationToken cancellationToken)
-        {
-            return await GenerateAndPersistScheduleAsync(yearId, classId, mode, options, mergeExisting, cancellationToken);
-        }
+                try
+                {
+                    // Delete existing slots for the year before starting a new generation
+                    var existingSlotsList = await _context.ScheduleSlot
+                        .Where(s => s.AcademicYearId == yearId && (s.SchoolId == schoolId.Value || s.SchoolId == 0))
+                        .ToListAsync(cancellationToken);
+                    if (existingSlotsList.Any())
+                    {
+                        _context.ScheduleSlot.RemoveRange(existingSlotsList);
+                        await _context.SaveChangesAsync(cancellationToken);
+                    }
 
-        [HttpGet]
-        public async Task<IActionResult> ExportSchedule(int yearId, string format = "json", CancellationToken cancellationToken = default)
-        {
+                     var session = await _schedulerService.StartGenerationAsync(schoolId.Value, yearId, mode, options, cancellationToken);
+
+                     _ = Task.Run(async () =>
+                     {
+                         try
+                         {
+                             using var scope = _serviceScopeFactory.CreateScope();
+                             var scopedSchedulerService = scope.ServiceProvider.GetRequiredService<ISchedulerService>();
+                             var scopedContext = scope.ServiceProvider.GetRequiredService<EduLogContext>();
+
+                             var result = await scopedSchedulerService.CompleteGenerationAsync(session, CancellationToken.None);
+                             if (!result.Success)
+                             {
+                                 _logger.LogWarning(
+                                     "Background AI schedule completion failed for generation {GenerationId}: {Warnings}",
+                                     session.GenerationId,
+                                     string.Join(" | ", result.Warnings));
+                                 return;
+                             }
+
+                             await ReplaceScheduleSlotsAsync(scopedContext, schoolId.Value, yearId, result.Slots, CancellationToken.None, mergeExisting: false);
+
+                             _logger.LogInformation(
+                                 "Background AI schedule generation completed for generation {GenerationId}. Slots persisted: {Slots}",
+                                 session.GenerationId,
+                                 result.Slots.Count);
+                         }
+                         catch (Exception ex)
+                         {
+                             _logger.LogError(ex, "Background AI schedule generation failed for generation {GenerationId}", session.GenerationId);
+                         }
+                     });
+
+                     return Json(new
+                     {
+                         success = true,
+                         generationId = session.GenerationId,
+                         iterations = session.Iterations,
+                         message = "Генерацію запущено."
+                     });
+                 }
+                 catch (HttpRequestException ex)
+                 {
+                     _logger.LogWarning(ex, "AI schedule generation start failed for school {SchoolId}, year {YearId}", schoolId, yearId);
+                     return BadRequest(new { success = false, message = ex.Message });
+                 }
+             }
+
+             return await GenerateAndPersistScheduleAsync(yearId, classId, mode, options, mergeExisting: false, cancellationToken);
+         }
+
+         [HttpPost]
+         [ValidateAntiForgeryToken]
+         public async Task<IActionResult> ApplyGeneratedSchedule(
+             int yearId,
+             int? classId,
+             SchedulerMode mode,
+             SchedulerConfigOptions options,
+             bool mergeExisting,
+             CancellationToken cancellationToken)
+         {
+             return await GenerateAndPersistScheduleAsync(yearId, classId, mode, options, mergeExisting, cancellationToken);
+         }
+
+         [HttpGet]
+         public async Task<IActionResult> ExportSchedule(int yearId, string format = "json", CancellationToken cancellationToken = default)
+         {
             try
             {
                 var schoolId = _tenantService.SchoolId;
@@ -1375,6 +1391,18 @@ namespace EduLog.Controllers
                 "XMLHttpRequest",
                 StringComparison.OrdinalIgnoreCase);
 
+            var schoolId = _tenantService.SchoolId;
+            if (schoolId == null)
+            {
+                if (isAjax)
+                {
+                    return BadRequest(new { success = false, message = "School is not selected." });
+                }
+
+                TempData["Error"] = "School is not selected.";
+                return RedirectToAction(nameof(Schedule), new { yearId, classId });
+            }
+
             var subjectRoomMeta = await _context.Subject
                 .Where(s => s.Id == subjectId)
                 .Select(s => new
@@ -1384,6 +1412,11 @@ namespace EduLog.Controllers
                 })
                 .FirstOrDefaultAsync();
 
+            var classRoomNumber = await _context.Class
+                .Where(c => c.Id == classId)
+                .Select(c => c.Room != null ? c.Room.Number : null)
+                .FirstOrDefaultAsync();
+
             var normalizedRoom = room?.Trim();
             if (subjectRoomMeta?.IsRoomFixed == true && !string.IsNullOrWhiteSpace(subjectRoomMeta.DefaultRoomNumber))
             {
@@ -1391,12 +1424,15 @@ namespace EduLog.Controllers
             }
             else if (string.IsNullOrWhiteSpace(normalizedRoom))
             {
-                normalizedRoom = subjectRoomMeta?.DefaultRoomNumber;
+                normalizedRoom = classRoomNumber;
             }
 
             // Check conflicts before saving
             var existingSlots = await _context.ScheduleSlot
-                .Where(s => s.AcademicYearId == yearId && s.DayOfWeek == dayOfWeek && s.LessonNumber == lessonNumber)
+                .Where(s => s.AcademicYearId == yearId
+                    && s.DayOfWeek == dayOfWeek
+                    && s.LessonNumber == lessonNumber
+                    && (s.SchoolId == schoolId.Value || s.SchoolId == 0))
                 .Where(s => slotId == null || s.Id != slotId)
                 .ToListAsync();
 
@@ -1432,7 +1468,8 @@ namespace EduLog.Controllers
 
             if (slotId.HasValue && slotId > 0)
             {
-                var slot = await _context.ScheduleSlot.FindAsync(slotId.Value);
+                var slot = await _context.ScheduleSlot
+                    .FirstOrDefaultAsync(s => s.Id == slotId.Value && (s.SchoolId == schoolId.Value || s.SchoolId == 0));
                 if (slot == null)
                 {
                     if (isAjax)
@@ -1448,12 +1485,14 @@ namespace EduLog.Controllers
                 slot.SubjectId = subjectId;
                 slot.TeacherId = teacherId;
                 slot.Room = normalizedRoom;
+                slot.SchoolId = schoolId.Value;
                 savedSlot = slot;
             }
             else
             {
                 savedSlot = new ScheduleSlot
                 {
+                    SchoolId = schoolId.Value,
                     AcademicYearId = yearId,
                     ClassId = classId,
                     DayOfWeek = dayOfWeek,
@@ -1491,9 +1530,23 @@ namespace EduLog.Controllers
                 "XMLHttpRequest",
                 StringComparison.OrdinalIgnoreCase);
 
-            var slot = await _context.ScheduleSlot.FindAsync(id);
+            var schoolId = _tenantService.SchoolId;
+            if (schoolId == null)
+            {
+                if (isAjax)
+                {
+                    return BadRequest(new { success = false, message = "School is not selected." });
+                }
+
+                TempData["Error"] = "School is not selected.";
+                return RedirectToAction(nameof(Schedule), new { yearId, classId });
+            }
+
+            var slot = await _context.ScheduleSlot
+                .FirstOrDefaultAsync(s => s.Id == id && (s.SchoolId == schoolId.Value || s.SchoolId == 0));
             if (slot != null)
             {
+                slot.SchoolId = schoolId.Value;
                 _context.ScheduleSlot.Remove(slot);
                 await _context.SaveChangesAsync();
             }
@@ -1522,14 +1575,49 @@ namespace EduLog.Controllers
                     return BadRequest("School is not selected.");
                 }
 
-                var result = await _schedulerService.GenerateScheduleAsync(schoolId.Value, yearId, mode, options, cancellationToken);
+                // If we're not merging, clear existing slots before generation as requested
+                if (!mergeExisting)
+                {
+                    var existingSlots = await _context.ScheduleSlot
+                        .Where(s => s.AcademicYearId == yearId && (s.SchoolId == schoolId.Value || s.SchoolId == 0))
+                        .ToListAsync(cancellationToken);
+
+                    if (existingSlots.Any())
+                    {
+                        _context.ScheduleSlot.RemoveRange(existingSlots);
+                        await _context.SaveChangesAsync(cancellationToken);
+                    }
+                }
+
+                _logger.LogInformation(
+                    "AI schedule generation requested for school {SchoolId}, year {YearId}, mode {Mode}, iterations {Iterations}, learning rate {LearningRate}",
+                    schoolId.Value,
+                    yearId,
+                    mode,
+                    options.Iterations,
+                    options.LearningRate);
+
+                var session = await _schedulerService.StartGenerationAsync(schoolId.Value, yearId, mode, options, cancellationToken);
+                var result = await _schedulerService.CompleteGenerationAsync(session, cancellationToken);
                 if (!result.Success)
                 {
+                    _logger.LogWarning(
+                        "AI schedule generation failed for school {SchoolId}, year {YearId}. Warnings: {Warnings}. Conflicts: {Conflicts}",
+                        schoolId.Value,
+                        yearId,
+                        string.Join(" | ", result.Warnings),
+                        string.Join(" | ", result.Conflicts));
                     TempData["Error"] = string.Join(" ", result.Warnings.Concat(result.Conflicts));
                     return RedirectToAction(nameof(Schedule), new { yearId, classId });
                 }
 
-                await ReplaceScheduleSlotsAsync(yearId, result.Slots, cancellationToken, mergeExisting);
+                await ReplaceScheduleSlotsAsync(_context, schoolId.Value, yearId, result.Slots, cancellationToken, mergeExisting);
+
+                _logger.LogInformation(
+                    "AI schedule generation completed for school {SchoolId}, year {YearId}. Slots persisted: {Slots}",
+                    schoolId.Value,
+                    yearId,
+                    result.Slots.Count);
 
                 TempData["Success"] = $"Розклад згенеровано і збережено. Слотів: {result.Slots.Count}.";
                 return RedirectToAction(nameof(Schedule), new { yearId, classId });
@@ -1542,42 +1630,47 @@ namespace EduLog.Controllers
             }
         }
 
-        private async Task ReplaceScheduleSlotsAsync(
+        private static async Task ReplaceScheduleSlotsAsync(
+            EduLogContext context,
+            int schoolId,
             int yearId,
             IEnumerable<ScheduleSlotDto> generatedSlots,
             CancellationToken cancellationToken,
             bool mergeExisting = false)
         {
-            var schoolId = _tenantService.SchoolId;
-            if (schoolId == null)
-            {
-                throw new InvalidOperationException("School is not selected.");
-            }
-
             var slots = generatedSlots
-                .Where(slot => slot.AcademicYearId == yearId && slot.SchoolId == schoolId.Value)
+                .Where(slot => slot.AcademicYearId == yearId && slot.SchoolId == schoolId)
+                .GroupBy(slot => new { slot.ClassId, slot.DayOfWeek, slot.LessonNumber })
+                .Select(group => group.Last())
                 .ToList();
 
-            var fixedRooms = await _context.Subject
-                .Where(s => s.SchoolId == schoolId.Value && s.IsRoomFixed && s.DefaultRoomId != null)
+            var fixedRooms = await context.Subject
+                .Where(s => s.SchoolId == schoolId && s.IsRoomFixed && s.DefaultRoomId != null)
                 .Select(s => new { s.Id, RoomNumber = s.DefaultRoom!.Number })
                 .ToDictionaryAsync(s => s.Id, s => s.RoomNumber, cancellationToken);
 
+            var classRooms = await context.Class
+                .Where(c => c.SchoolId == schoolId)
+                .Select(c => new { c.Id, RoomNumber = c.Room != null ? c.Room.Number : null })
+                .ToDictionaryAsync(c => c.Id, c => c.RoomNumber, cancellationToken);
+
             if (!mergeExisting)
             {
-                var existingSlots = await _context.ScheduleSlot
-                    .Where(slot => slot.SchoolId == schoolId.Value && slot.AcademicYearId == yearId)
+                var existingSlots = await context.ScheduleSlot
+                    .Where(slot => slot.SchoolId == schoolId && slot.AcademicYearId == yearId)
                     .ToListAsync(cancellationToken);
-                _context.ScheduleSlot.RemoveRange(existingSlots);
+                context.ScheduleSlot.RemoveRange(existingSlots);
             }
 
             foreach (var slot in slots)
             {
                 var fixedRoom = fixedRooms.TryGetValue(slot.SubjectId, out var configuredRoom) ? configuredRoom : null;
+                var classRoom = classRooms.TryGetValue(slot.ClassId, out var homeRoom) ? homeRoom : null;
+                var resolvedRoom = fixedRoom ?? (!string.IsNullOrWhiteSpace(slot.Room) ? slot.Room : classRoom);
 
                 var existingSlot = mergeExisting
-                    ? await _context.ScheduleSlot.FirstOrDefaultAsync(
-                        item => item.SchoolId == schoolId.Value &&
+                    ? await context.ScheduleSlot.FirstOrDefaultAsync(
+                        item => item.SchoolId == schoolId &&
                                 item.AcademicYearId == yearId &&
                                 item.ClassId == slot.ClassId &&
                                 item.DayOfWeek == slot.DayOfWeek &&
@@ -1589,24 +1682,24 @@ namespace EduLog.Controllers
                 {
                     existingSlot.SubjectId = slot.SubjectId;
                     existingSlot.TeacherId = slot.TeacherId;
-                    existingSlot.Room = fixedRoom ?? slot.Room;
+                    existingSlot.Room = resolvedRoom;
                     continue;
                 }
 
-                _context.ScheduleSlot.Add(new ScheduleSlot
+                context.ScheduleSlot.Add(new ScheduleSlot
                 {
-                    SchoolId = schoolId.Value,
+                    SchoolId = schoolId,
                     AcademicYearId = yearId,
                     ClassId = slot.ClassId,
                     SubjectId = slot.SubjectId,
                     TeacherId = slot.TeacherId,
                     DayOfWeek = slot.DayOfWeek,
                     LessonNumber = slot.LessonNumber,
-                    Room = fixedRoom ?? slot.Room
+                    Room = resolvedRoom
                 });
             }
 
-            await _context.SaveChangesAsync(cancellationToken);
+            await context.SaveChangesAsync(cancellationToken);
         }
 
         private Task ReplaceScheduleSlotsAsync(
@@ -1627,7 +1720,7 @@ namespace EduLog.Controllers
                 Room = slot.Room
             });
 
-            return ReplaceScheduleSlotsAsync(yearId, slotDtos, cancellationToken, mergeExisting);
+            return ReplaceScheduleSlotsAsync(_context, _tenantService.SchoolId ?? 0, yearId, slotDtos, cancellationToken, mergeExisting);
         }
 
         // ───────── Invitations ─────────
@@ -1749,6 +1842,55 @@ namespace EduLog.Controllers
             return Regex.IsMatch(normalized, "^#[0-9A-Fa-f]{6}$")
                 ? normalized
                 : null;
+        }
+
+        private static string GenerateDeterministicHexColor(string? input)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+                return "#6C757D";
+
+            unchecked
+            {
+                var hash = 17;
+                foreach (var ch in input.Trim())
+                {
+                    hash = hash * 31 + ch;
+                }
+
+                var r = 80 + Math.Abs(hash & 0x7F);
+                var g = 80 + Math.Abs((hash >> 8) & 0x7F);
+                var b = 80 + Math.Abs((hash >> 16) & 0x7F);
+
+                return $"#{r:X2}{g:X2}{b:X2}";
+            }
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ClearSchedule(int yearId)
+        {
+            var schoolId = _tenantService.SchoolId;
+            if (schoolId == null)
+            {
+                TempData["Error"] = "School is not selected.";
+                return RedirectToAction(nameof(Schedule), new { yearId });
+            }
+
+            var slots = await _context.ScheduleSlot
+                .Where(s => s.AcademicYearId == yearId && (s.SchoolId == schoolId.Value || s.SchoolId == 0))
+                .ToListAsync();
+
+            if (!slots.Any())
+            {
+                TempData["Success"] = "Розклад уже порожній.";
+                return RedirectToAction(nameof(Schedule), new { yearId });
+            }
+
+            _context.ScheduleSlot.RemoveRange(slots);
+            await _context.SaveChangesAsync();
+
+            TempData["Success"] = $"Очищено розклад для навчального року.";
+            return RedirectToAction(nameof(Schedule), new { yearId });
         }
     }
 }

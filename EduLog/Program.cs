@@ -59,7 +59,7 @@ builder.Services.Configure<SchedulerApiOptions>(builder.Configuration.GetSection
 builder.Services.AddHttpClient<ISchedulerService, SchedulerService>((serviceProvider, client) =>
 {
     var schedulerOptions = serviceProvider.GetRequiredService<IOptions<SchedulerApiOptions>>().Value;
-    client.BaseAddress = new Uri(schedulerOptions.BaseUrl ?? "http://localhost:5001");
+    client.BaseAddress = new Uri(schedulerOptions.BaseUrl ?? "http://127.0.0.1:8000");
     client.Timeout = TimeSpan.FromSeconds(Math.Max(1, schedulerOptions.TimeoutSeconds));
 })
 .AddPolicyHandler((serviceProvider, _) =>

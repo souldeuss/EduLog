@@ -12,6 +12,17 @@ namespace EduLog.Services
 {
     public interface ISchedulerService
     {
+        Task<GenerationSession> StartGenerationAsync(
+            int schoolId,
+            int academicYearId,
+            SchedulerMode mode,
+            SchedulerConfigOptions options,
+            CancellationToken cancellationToken = default);
+
+        Task<ScheduleGenerationResult> CompleteGenerationAsync(
+            GenerationSession session,
+            CancellationToken cancellationToken = default);
+
         Task<ScheduleGenerationResult> GenerateScheduleAsync(
             int schoolId,
             int academicYearId,
@@ -34,6 +45,16 @@ namespace EduLog.Services
             int schoolId,
             int academicYearId,
             CancellationToken cancellationToken = default);
+    }
+
+    public sealed class GenerationSession
+    {
+        public int GenerationId { get; set; }
+        public int SchoolId { get; set; }
+        public int AcademicYearId { get; set; }
+        public int Iterations { get; set; }
+        public double LearningRate { get; set; }
+        public SchedulerService.RemoteIdMappings RemoteMappings { get; set; } = new();
     }
 
     public sealed class SchedulerService : ISchedulerService
@@ -78,42 +99,96 @@ namespace EduLog.Services
             _options = options.Value;
         }
 
-        public async Task<ScheduleGenerationResult> GenerateScheduleAsync(
+        public async Task<GenerationSession> StartGenerationAsync(
             int schoolId,
             int academicYearId,
             SchedulerMode mode,
             SchedulerConfigOptions options,
             CancellationToken cancellationToken = default)
         {
+            _logger.LogInformation(
+                "Stage=validate-start school={SchoolId} year={YearId} mode={Mode} iterations={Iterations} lr={LearningRate}",
+                schoolId,
+                academicYearId,
+                mode,
+                options.Iterations,
+                options.LearningRate);
+
             if (!await ValidateScheduleDataAsync(schoolId, cancellationToken))
             {
-                return new ScheduleGenerationResult
-                {
-                    Success = false,
-                    Warnings = new List<string> { "Недостатньо даних для генерації розкладу." }
-                };
+                _logger.LogWarning("Stage=validate-failed school={SchoolId} year={YearId}", schoolId, academicYearId);
+                throw new HttpRequestException("Недостатньо даних для генерації розкладу.");
             }
 
+            _logger.LogInformation("Stage=payload-build-start school={SchoolId} year={YearId}", schoolId, academicYearId);
             var schoolPayload = await BuildSchoolPayloadAsync(schoolId, academicYearId, options, cancellationToken);
+            _logger.LogInformation(
+                "Stage=payload-build-complete school={SchoolId} year={YearId} classes={Classes} subjects={Subjects} teachers={Teachers} relations={Relations}",
+                schoolId,
+                academicYearId,
+                schoolPayload.Classes.Count,
+                schoolPayload.Subjects.Count,
+                schoolPayload.Teachers.Count,
+                schoolPayload.ClassSubjects.Count);
+
+            _logger.LogInformation("Stage=sync-reference-start school={SchoolId} year={YearId}", schoolId, academicYearId);
             var remoteMappings = await SyncReferenceDataAsync(schoolPayload, cancellationToken);
+            _logger.LogInformation("Stage=sync-assignments-start school={SchoolId} year={YearId}", schoolId, academicYearId);
             await SyncAssignmentsAsync(schoolPayload, remoteMappings, cancellationToken);
 
             var remoteRequest = new RemoteScheduleGenerateRequest
             {
-                Iterations = Math.Clamp(options.PlanningPeriodWeeks * 1000, 1000, 10000),
+                Iterations = Math.Clamp(options.Iterations, 10, 500),
+                LearningRate = options.LearningRate,
                 UseExisting = mode == SchedulerMode.Append,
                 PreserveLocked = mode != SchedulerMode.Dense,
                 ModelVersion = null
             };
+
+            _logger.LogInformation(
+                "Stage=remote-generate-start school={SchoolId} year={YearId} iterations={Iterations} learningRate={LearningRate} useExisting={UseExisting} preserveLocked={PreserveLocked}",
+                schoolId,
+                academicYearId,
+                remoteRequest.Iterations,
+                remoteRequest.LearningRate,
+                remoteRequest.UseExisting,
+                remoteRequest.PreserveLocked);
 
             var generationResponse = await PostJsonAsync<RemoteScheduleGenerationStatus>(
                 GenerateRoute,
                 remoteRequest,
                 cancellationToken);
 
-            var completedStatus = await WaitForGenerationCompletionAsync(generationResponse.Id, cancellationToken);
+            _logger.LogInformation(
+                "Stage=remote-generate-queued school={SchoolId} year={YearId} generationId={GenerationId} status={Status}",
+                schoolId,
+                academicYearId,
+                generationResponse.Id,
+                generationResponse.Status);
+
+            return new GenerationSession
+            {
+                GenerationId = generationResponse.Id,
+                SchoolId = schoolId,
+                AcademicYearId = academicYearId,
+                Iterations = remoteRequest.Iterations,
+                LearningRate = remoteRequest.LearningRate,
+                RemoteMappings = remoteMappings
+            };
+        }
+
+        public async Task<ScheduleGenerationResult> CompleteGenerationAsync(
+            GenerationSession session,
+            CancellationToken cancellationToken = default)
+        {
+            var completedStatus = await WaitForGenerationCompletionAsync(session.GenerationId, cancellationToken, TimeSpan.FromHours(6));
             if (!string.Equals(completedStatus.Status, "completed", StringComparison.OrdinalIgnoreCase))
             {
+                _logger.LogWarning(
+                    "Stage=remote-generate-incomplete generationId={GenerationId} status={Status} error={Error}",
+                    session.GenerationId,
+                    completedStatus.Status,
+                    completedStatus.ErrorMessage);
                 return new ScheduleGenerationResult
                 {
                     Success = false,
@@ -126,8 +201,21 @@ namespace EduLog.Services
                 };
             }
 
+            _logger.LogInformation("Stage=remote-export-start generationId={GenerationId}", session.GenerationId);
             var exportBytes = await DownloadCurrentScheduleBytesAsync("json", cancellationToken);
-            return await BuildGenerationResultAsync(exportBytes, remoteMappings, schoolId, academicYearId, cancellationToken);
+            _logger.LogInformation("Stage=remote-export-complete generationId={GenerationId}", session.GenerationId);
+            return await BuildGenerationResultAsync(exportBytes, session.RemoteMappings, session.SchoolId, session.AcademicYearId, cancellationToken);
+        }
+
+        public async Task<ScheduleGenerationResult> GenerateScheduleAsync(
+            int schoolId,
+            int academicYearId,
+            SchedulerMode mode,
+            SchedulerConfigOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            var session = await StartGenerationAsync(schoolId, academicYearId, mode, options, cancellationToken);
+            return await CompleteGenerationAsync(session, cancellationToken);
         }
 
         public async Task<bool> ValidateScheduleDataAsync(int schoolId, CancellationToken cancellationToken = default)
@@ -403,6 +491,11 @@ namespace EduLog.Services
                 .Where(item => item.SchoolId == schoolId)
                 .ToListAsync(cancellationToken);
 
+            var rooms = await _context.Room
+                .Where(item => item.SchoolId == schoolId)
+                .OrderBy(item => item.Number)
+                .ToListAsync(cancellationToken);
+
             var schoolPayload = new SchoolPayload
             {
                 SchoolId = schoolId,
@@ -434,7 +527,7 @@ namespace EduLog.Services
                     Department = null,
                     MaxHoursPerWeek = 18
                 }).ToList(),
-                Classrooms = BuildClassroomsPayload(classes.Count, teachers.Count),
+                Classrooms = BuildClassroomsPayload(rooms),
                 Timeslots = BuildTimeslotsPayload(options.MaxLessonsPerDay),
                 ClassSubjects = classSubjects.Select(relation => new SchoolClassSubjectPayload
                 {
@@ -448,25 +541,35 @@ namespace EduLog.Services
             return schoolPayload;
         }
 
-        private static List<SchoolClassroomPayload> BuildClassroomsPayload(int classCount, int teacherCount)
+        private static List<SchoolClassroomPayload> BuildClassroomsPayload(List<Room> rooms)
         {
-            var rooms = new List<SchoolClassroomPayload>();
-            var roomCount = Math.Max(Math.Max(classCount, teacherCount), 1);
-
-            for (var index = 1; index <= roomCount; index++)
+            if (rooms == null || rooms.Count == 0)
             {
-                rooms.Add(new SchoolClassroomPayload
+                // Fallback: generate minimal dummy rooms if none exist
+                var dummyRooms = new List<SchoolClassroomPayload>
                 {
-                    LocalId = index,
-                    Code = BuildCode(RemotePrefixes.Room, index),
-                    Capacity = 35,
-                    ClassroomType = "general",
-                    HasProjector = true,
-                    HasComputers = false
-                });
+                    new SchoolClassroomPayload
+                    {
+                        LocalId = 1,
+                        Code = "room_1",
+                        Capacity = 35,
+                        ClassroomType = "general",
+                        HasProjector = true,
+                        HasComputers = false
+                    }
+                };
+                return dummyRooms;
             }
 
-            return rooms;
+            return rooms.Select((room, index) => new SchoolClassroomPayload
+            {
+                LocalId = room.Id,
+                Code = room.Number,
+                Capacity = room.Capacity ?? 30,
+                ClassroomType = "general",
+                HasProjector = true,
+                HasComputers = false
+            }).ToList();
         }
 
         private static List<SchoolTimeslotPayload> BuildTimeslotsPayload(int maxLessonsPerDay)
@@ -639,10 +742,15 @@ namespace EduLog.Services
             return data;
         }
 
-        private async Task<RemoteScheduleGenerationStatus> WaitForGenerationCompletionAsync(int generationId, CancellationToken cancellationToken)
+        private async Task<RemoteScheduleGenerationStatus> WaitForGenerationCompletionAsync(
+            int generationId,
+            CancellationToken cancellationToken,
+            TimeSpan? timeoutOverride = null)
         {
-            var timeout = TimeSpan.FromSeconds(Math.Max(10, _options.TimeoutSeconds));
+            var timeout = timeoutOverride ?? TimeSpan.FromSeconds(Math.Max(10, _options.TimeoutSeconds));
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            string? lastStatus = null;
+            var lastIteration = -1;
 
             while (stopwatch.Elapsed < timeout)
             {
@@ -650,6 +758,19 @@ namespace EduLog.Services
                 if (status == null)
                 {
                     throw new HttpRequestException("Python API did not return generation status.");
+                }
+
+                if (!string.Equals(status.Status, lastStatus, StringComparison.OrdinalIgnoreCase) || status.CurrentIteration != lastIteration)
+                {
+                    _logger.LogInformation(
+                        "Stage=remote-status generationId={GenerationId} status={Status} iteration={CurrentIteration}/{TotalIterations}",
+                        generationId,
+                        status.Status,
+                        status.CurrentIteration,
+                        status.Iterations);
+
+                    lastStatus = status.Status;
+                    lastIteration = status.CurrentIteration;
                 }
 
                 if (string.Equals(status.Status, "completed", StringComparison.OrdinalIgnoreCase) ||
@@ -835,7 +956,7 @@ namespace EduLog.Services
             return int.TryParse(rawId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : null;
         }
 
-        private sealed class RemoteIdMappings
+        public sealed class RemoteIdMappings
         {
             public Dictionary<int, int> TeacherIds { get; set; } = new();
             public Dictionary<int, int> CourseIds { get; set; } = new();
@@ -958,6 +1079,7 @@ namespace EduLog.Services
         private sealed class RemoteScheduleGenerateRequest
         {
             public int Iterations { get; set; }
+            public double LearningRate { get; set; }
             public bool UseExisting { get; set; }
             public bool PreserveLocked { get; set; }
             public string? ModelVersion { get; set; }
