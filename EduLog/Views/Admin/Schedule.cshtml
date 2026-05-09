@@ -266,6 +266,79 @@
         font-weight: 600;
         min-width: 1.6em;
     }
+
+    /* ── Teacher view ── */
+    .teacher-lesson-card {
+        border-radius: .65rem;
+        padding: .4rem .55rem;
+        border: 1px solid var(--bs-border-color-translucent);
+        background: var(--bs-tertiary-bg);
+        cursor: default;
+        user-select: none;
+    }
+
+    .teacher-lesson-class {
+        font-size: .68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: var(--bs-secondary-color);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .teacher-lesson-subject {
+        font-weight: 600;
+        font-size: .88rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .teacher-lesson-room {
+        font-size: .73rem;
+        color: var(--bs-secondary-color);
+    }
+
+    .teacher-drop-zone {
+        min-height: 80px;
+        border-radius: .65rem;
+        padding: .35rem;
+    }
+
+    .teacher-stats-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: .32rem 0;
+        border-bottom: 1px solid var(--bs-border-color-translucent);
+        font-size: .84rem;
+    }
+
+    .teacher-stats-item:last-child {
+        border-bottom: none;
+    }
+
+    #viewModeBar .btn {
+        font-size: .85rem;
+    }
+
+    #teacherBoard {
+        border-radius: 1rem;
+        overflow: hidden;
+        border: 1px solid var(--bs-border-color);
+    }
+
+    #teacherBoard table {
+        margin-bottom: 0;
+        table-layout: fixed;
+    }
+
+    #teacherBoard th,
+    #teacherBoard td {
+        vertical-align: top;
+    }
 </style>
 
 <partial name="_AdminNav" />
@@ -359,13 +432,42 @@
 }
 else
 {
+    <div id="viewModeBar" class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <div class="btn-group btn-group-sm" role="group" aria-label="Режим перегляду">
+            <button type="button" id="btnViewClass" class="btn btn-primary">
+                <i class="bi bi-grid-3x3-gap-fill"></i> За класом
+            </button>
+            <button type="button" id="btnViewTeacher" class="btn btn-outline-primary">
+                <i class="bi bi-person-badge-fill"></i> За вчителем
+            </button>
+        </div>
+        <div id="teacherSelectorWrap" class="d-none align-items-center gap-2">
+            <i class="bi bi-person-badge text-muted fs-5"></i>
+            <select id="teacherViewSelect" class="form-select form-select-sm" style="min-width: 220px;">
+                <option value="">— оберіть вчителя —</option>
+                @if (teachersList != null)
+                {
+                    @foreach (var t in teachersList)
+                    {
+                        <option value="@t.Value">@t.Text</option>
+                    }
+                }
+            </select>
+            <span id="teacherViewLoading" class="spinner-border spinner-border-sm text-primary d-none" role="status" aria-label="Завантаження..."></span>
+        </div>
+    </div>
+
     <div class="row g-3 schedule-layout mb-4">
         <aside class="col-12 col-xl-3">
             <div id="weeklyOverviewPanel" class="card weekly-overview-panel">
-                <div class="card-header bg-transparent border-0 pb-0">
+                <div id="classViewHeader" class="card-header bg-transparent border-0 pb-0">
                     <h6 class="mb-1">Предмети</h6>
                     <p class="text-muted small mb-0">@selectedClass.Name · Призначено / Потрібно</p>
                     <p class="drag-hint mb-0"><i class="bi bi-arrows-move"></i> Перетягніть предмет у розклад</p>
+                </div>
+                <div id="teacherViewHeader" class="card-header bg-transparent border-0 pb-0 d-none">
+                    <h6 class="mb-1" id="teacherViewName">Вчитель</h6>
+                    <p class="text-muted small mb-0">Тижневий розклад</p>
                 </div>
                 <div class="card-body pt-3 weekly-overview-list d-flex flex-column gap-2" id="subjectSidebar">
                     @if (classOverview.Any())
@@ -416,6 +518,12 @@ else
                     {
                         <div class="alert alert-light border mb-0 small">Для цього класу ще не налаштовано предмети в навчальному плані.</div>
                     }
+                </div>
+
+                <div class="card-body pt-2 weekly-overview-list d-none" id="teacherStatsSidebar">
+                    <div id="teacherStatsContent">
+                        <p class="text-muted small mb-0">Оберіть вчителя для перегляду статистики.</p>
+                    </div>
                 </div>
             </div>
         </aside>
@@ -507,6 +615,43 @@ else
                                                 {
                                                     <button type="button" class="btn btn-sm btn-outline-secondary add-slot-btn">+</button>
                                                 }
+                                            </div>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            @* Teacher view board (read-only, populated via JS) *@
+            <div id="teacherBoard" class="schedule-board shadow-sm d-none mt-0">
+                <div class="table-responsive">
+                    <table class="table table-striped align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:78px">Урок</th>
+                                @for (int d = 1; d <= 5; d++)
+                                {
+                                    <th>
+                                        <i class="bi @dayIcons[d - 1] text-primary"></i>
+                                        @dayNames[d - 1]
+                                    </th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody id="teacherScheduleBody">
+                            @for (int lesson = 1; lesson <= 8; lesson++)
+                            {
+                                <tr>
+                                    <td class="fw-semibold text-center">@lesson</td>
+                                    @for (int day = 1; day <= 5; day++)
+                                    {
+                                        <td>
+                                            <div class="teacher-drop-zone"
+                                                 data-day="@day"
+                                                 data-lesson="@lesson">
                                             </div>
                                         </td>
                                     }
@@ -787,9 +932,24 @@ else
         const modalDeleteBtn = document.getElementById('modalDeleteBtn');
         const slotModalEl = document.getElementById('slotModal');
         const weeklyOverviewPanel = document.getElementById('weeklyOverviewPanel');
+        const btnViewClass = document.getElementById('btnViewClass');
+        const btnViewTeacher = document.getElementById('btnViewTeacher');
+        const teacherSelectorWrap = document.getElementById('teacherSelectorWrap');
+        const teacherViewSelect = document.getElementById('teacherViewSelect');
+        const teacherViewLoading = document.getElementById('teacherViewLoading');
+        const teacherBoard = document.getElementById('teacherBoard');
+        const classViewHeader = document.getElementById('classViewHeader');
+        const teacherViewHeader = document.getElementById('teacherViewHeader');
+        const teacherViewName = document.getElementById('teacherViewName');
+        const subjectSidebar = document.getElementById('subjectSidebar');
+        const teacherStatsSidebar = document.getElementById('teacherStatsSidebar');
+        const teacherStatsContent = document.getElementById('teacherStatsContent');
+        const teacherScheduleBody = document.getElementById('teacherScheduleBody');
 
         let unsavedChanges = false;
         let activeEditCard = null;
+        let currentViewMode = 'class';
+        const teacherScheduleCache = {};
 
         function getAntiForgeryToken() {
             return document.querySelector('#slotForm input[name="__RequestVerificationToken"]')?.value
@@ -1330,6 +1490,163 @@ else
             });
         }
 
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function setViewMode(mode) {
+            currentViewMode = mode;
+            const isTeacher = mode === 'teacher';
+
+            // Toggle boards
+            board?.classList.toggle('d-none', isTeacher);
+            teacherBoard?.classList.toggle('d-none', !isTeacher);
+
+            // Toggle sidebar panels
+            classViewHeader?.classList.toggle('d-none', isTeacher);
+            teacherViewHeader?.classList.toggle('d-none', !isTeacher);
+            subjectSidebar?.classList.toggle('d-none', isTeacher);
+            teacherStatsSidebar?.classList.toggle('d-none', !isTeacher);
+
+            // Toggle toolbar buttons
+            btnViewClass?.classList.toggle('btn-primary', !isTeacher);
+            btnViewClass?.classList.toggle('btn-outline-primary', isTeacher);
+            btnViewTeacher?.classList.toggle('btn-primary', isTeacher);
+            btnViewTeacher?.classList.toggle('btn-outline-primary', !isTeacher);
+
+            // Toggle teacher selector
+            if (isTeacher) {
+                teacherSelectorWrap?.classList.remove('d-none');
+                teacherSelectorWrap?.classList.add('d-flex');
+                const teacherId = teacherViewSelect?.value;
+                if (teacherId) {
+                    loadAndRenderTeacherSchedule(teacherId);
+                }
+            } else {
+                teacherSelectorWrap?.classList.add('d-none');
+                teacherSelectorWrap?.classList.remove('d-flex');
+            }
+        }
+
+        async function loadAndRenderTeacherSchedule(teacherId) {
+            if (!teacherId) return;
+
+            const yearId = '@(selectedYear?.Id ?? 0)';
+            if (teacherScheduleCache[teacherId]) {
+                renderTeacherSchedule(teacherScheduleCache[teacherId], teacherId);
+                return;
+            }
+
+            teacherViewLoading?.classList.remove('d-none');
+            try {
+                const response = await fetch(`/Admin/GetTeacherSchedule?yearId=${yearId}&teacherId=${teacherId}`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                });
+                if (!response.ok) throw new Error('Не вдалося завантажити розклад вчителя.');
+                const data = await response.json();
+                teacherScheduleCache[teacherId] = data;
+                renderTeacherSchedule(data, teacherId);
+            } catch (err) {
+                showToast(err.message, true);
+            } finally {
+                teacherViewLoading?.classList.add('d-none');
+            }
+        }
+
+        function renderTeacherSchedule(slots, teacherId) {
+            if (!teacherScheduleBody) return;
+
+            // Clear all zones
+            teacherScheduleBody.querySelectorAll('.teacher-drop-zone').forEach(z => { z.innerHTML = ''; });
+
+            slots.forEach(slot => {
+                const zone = teacherScheduleBody.querySelector(
+                    `.teacher-drop-zone[data-day="${slot.dayOfWeek}"][data-lesson="${slot.lessonNumber}"]`
+                );
+                if (!zone) return;
+
+                // Prefer color from sidebar overview; fall back to a generated one
+                const sidebarColor = (() => {
+                    const allItems = weeklyOverviewPanel?.querySelectorAll('.subject-overview-item') ?? [];
+                    for (const el of allItems) {
+                        if (el.querySelector('.subject-overview-title')?.textContent?.trim() === slot.subjectName) {
+                            return el.dataset.subjectColor || null;
+                        }
+                    }
+                    return null;
+                })();
+                const color = normalizeHexColor(slot.subjectColor || sidebarColor || '') || normalizeHexColor(generateSubjectColor(slot.subjectName)) || '#6C757D';
+                const bg = hexToRgba(color, 0.15) || 'var(--bs-tertiary-bg)';
+                const border = hexToRgba(color, 0.45) || 'var(--bs-border-color-translucent)';
+
+                const card = document.createElement('div');
+                card.className = 'teacher-lesson-card';
+                card.style.background = bg;
+                card.style.borderColor = border;
+                card.innerHTML = `
+                    <div class="teacher-lesson-class">${escapeHtml(slot.className)}</div>
+                    <div class="teacher-lesson-subject">${escapeHtml(slot.subjectName)}</div>
+                    ${slot.room ? `<div class="teacher-lesson-room">каб. ${escapeHtml(slot.room)}</div>` : ''}
+                `;
+                zone.appendChild(card);
+            });
+
+            updateTeacherStats(slots, teacherId);
+        }
+
+        function updateTeacherStats(slots, teacherId) {
+            if (!teacherStatsContent) return;
+
+            const totalHours = slots.length;
+            const dayCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+            const classCounts = {};
+
+            slots.forEach(s => {
+                if (dayCounts[s.dayOfWeek] !== undefined) dayCounts[s.dayOfWeek]++;
+                const cls = s.className || '—';
+                classCounts[cls] = (classCounts[cls] || 0) + 1;
+            });
+
+            const maxDay = Math.max(1, ...Object.values(dayCounts));
+            const dayRows = Object.entries(dayCounts).map(([d, count]) => `
+                <div class="stats-day">
+                    <span class="small">${dayNames[Number(d) - 1]}</span>
+                    <div class="stats-bar"><span style="width:${Math.round(count * 100 / maxDay)}%"></span></div>
+                    <span class="small text-end day-count">${count}</span>
+                </div>`).join('');
+
+            const classRows = Object.entries(classCounts)
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([cls, count]) => `
+                    <div class="teacher-stats-item">
+                        <span>${escapeHtml(cls)}</span>
+                        <span class="badge bg-primary-subtle text-primary-emphasis">${count} ур.</span>
+                    </div>`).join('');
+
+            teacherStatsContent.innerHTML = `
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="small text-muted">Всього уроків/тиждень</span>
+                        <strong>${totalHours}</strong>
+                    </div>
+                    ${dayRows}
+                </div>
+                ${classRows ? `<div class="mt-2">
+                    <p class="small text-muted fw-semibold mb-1">Класи</p>
+                    ${classRows}
+                </div>` : ''}
+            `;
+
+            // Update sidebar header
+            if (teacherViewName && teacherViewSelect) {
+                teacherViewName.textContent = teacherViewSelect.selectedOptions[0]?.text || 'Вчитель';
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.lesson-card').forEach(initLessonCard);
             renderConflictBadge(document.querySelectorAll('.lesson-card.is-conflict').length);
@@ -1342,6 +1659,15 @@ else
 
             attachBoardEvents();
             initSortable();
+
+            // ── View mode toggle ──
+            btnViewClass?.addEventListener('click', () => setViewMode('class'));
+            btnViewTeacher?.addEventListener('click', () => setViewMode('teacher'));
+            teacherViewSelect?.addEventListener('change', () => {
+                if (currentViewMode === 'teacher' && teacherViewSelect.value) {
+                    loadAndRenderTeacherSchedule(teacherViewSelect.value);
+                }
+            });
 
             if (saveChangesBtn) {
                 saveChangesBtn.addEventListener('click', () => {

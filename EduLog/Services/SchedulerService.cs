@@ -321,6 +321,17 @@ namespace EduLog.Services
                 Success = true
             };
 
+            const int maxSkipDetails = 5;
+            var skippedSlots = 0;
+            var reportedSkips = 0;
+
+            static string? GetString(JsonElement item, string propertyName)
+            {
+                return item.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+                    ? property.GetString()
+                    : null;
+            }
+
             if (root.TryGetProperty("meta", out var metaElement))
             {
                 result.Statistics = new ScheduleStatisticsDto
@@ -349,7 +360,38 @@ namespace EduLog.Services
 
                 if (!groupId.HasValue || !courseId.HasValue || !teacherId.HasValue)
                 {
-                    result.Warnings.Add("Skipped one exported slot because a local mapping could not be resolved.");
+                    skippedSlots++;
+
+                    if (reportedSkips < maxSkipDetails)
+                    {
+                        var missingParts = new List<string>();
+                        if (!groupId.HasValue)
+                        {
+                            missingParts.Add("group");
+                        }
+                        if (!courseId.HasValue)
+                        {
+                            missingParts.Add("course");
+                        }
+                        if (!teacherId.HasValue)
+                        {
+                            missingParts.Add("teacher");
+                        }
+
+                        var groupCode = GetString(item, "group_code") ?? "n/a";
+                        var courseCode = GetString(item, "course_code") ?? "n/a";
+                        var teacherName = GetString(item, "teacher_name") ?? "n/a";
+                        var teacherRemoteId = item.TryGetProperty("teacher_id", out var teacherIdElement) &&
+                            teacherIdElement.ValueKind == JsonValueKind.Number
+                            ? teacherIdElement.GetInt32().ToString(CultureInfo.InvariantCulture)
+                            : "n/a";
+
+                        var detail = $"Skipped slot due to missing {string.Join(", ", missingParts)} mapping. group_code={groupCode}, course_code={courseCode}, teacher_id={teacherRemoteId}, teacher_name={teacherName}.";
+                        result.Warnings.Add(detail);
+                        _logger.LogWarning("{Detail}", detail);
+                        reportedSkips++;
+                    }
+
                     continue;
                 }
 
@@ -367,6 +409,11 @@ namespace EduLog.Services
                     LessonNumber = lessonNumber,
                     Room = item.TryGetProperty("classroom_code", out var roomElement) ? roomElement.GetString() : null
                 });
+            }
+
+            if (skippedSlots > reportedSkips)
+            {
+                result.Warnings.Add($"Skipped {skippedSlots} slots due to missing mappings.");
             }
 
             if (result.Slots.Count == 0)
@@ -471,6 +518,7 @@ namespace EduLog.Services
             var classes = await _context.Class
                 .Include(item => item.ClassSubjects)
                 .ThenInclude(relation => relation.Subject)
+                .Include(item => item.Room)
                 .Where(item => item.SchoolId == schoolId)
                 .OrderBy(item => item.Name)
                 .ToListAsync(cancellationToken);
@@ -507,7 +555,8 @@ namespace EduLog.Services
                     Name = item.Name,
                     Year = ExtractYearFromClassName(item.Name),
                     StudentsCount = 25,
-                    TeacherId = item.TeacherId
+                    TeacherId = item.TeacherId,
+                    HomeClassroomCode = item.Room?.Number
                 }).ToList(),
                 Subjects = subjects.Select(item => new SchoolSubjectPayload
                 {
@@ -515,7 +564,7 @@ namespace EduLog.Services
                     Code = BuildCode(RemotePrefixes.Course, item.Id),
                     Name = item.Name,
                     Credits = 3,
-                    HoursPerWeek = 2,
+                    HoursPerWeek = Math.Max(1, item.HoursPerWeek),
                     Difficulty = 1,
                     TeacherId = item.TeacherId
                 }).ToList(),
@@ -658,7 +707,8 @@ namespace EduLog.Services
                 code = classItem.Code,
                 year = classItem.Year,
                 students_count = classItem.StudentsCount,
-                specialization = classItem.Name
+                specialization = classItem.Name,
+                home_classroom_code = classItem.HomeClassroomCode
             }, cancellationToken);
 
             return created.Id;
@@ -927,12 +977,25 @@ namespace EduLog.Services
 
         private int? ResolveTeacherId(JsonElement item, RemoteIdMappings mappings)
         {
+            // Prefer explicit teacher_code mapping when available
+            var fromCode = DecodeId(item, "teacher_code", RemotePrefixes.Teacher);
+            if (fromCode.HasValue)
+            {
+                return fromCode.Value;
+            }
+
+            // Then try numeric remote teacher_id -> local id via mappings
             if (item.TryGetProperty("teacher_id", out var teacherIdElement) && teacherIdElement.ValueKind == JsonValueKind.Number)
             {
                 var remoteTeacherId = teacherIdElement.GetInt32();
-                return mappings.TeacherIds.FirstOrDefault(pair => pair.Value == remoteTeacherId).Key;
+                var localPair = mappings.TeacherIds.FirstOrDefault(pair => pair.Value == remoteTeacherId);
+                if (!localPair.Equals(default(KeyValuePair<int, int>)))
+                {
+                    return localPair.Key;
+                }
             }
 
+            // Fallback to matching by full name
             if (item.TryGetProperty("teacher_name", out var teacherNameElement) && teacherNameElement.ValueKind == JsonValueKind.String)
             {
                 var teacher = _context.Teacher
@@ -993,6 +1056,7 @@ namespace EduLog.Services
             public int Year { get; set; }
             public int StudentsCount { get; set; }
             public int? TeacherId { get; set; }
+            public string? HomeClassroomCode { get; set; }
         }
 
         private sealed class SchoolSubjectPayload

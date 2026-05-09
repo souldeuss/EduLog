@@ -912,6 +912,40 @@ namespace EduLog.Controllers
         }
 
         [HttpPost]
+        public async Task<IActionResult> BulkCreateSubjects([FromBody] List<BulkSubjectItem> items)
+        {
+            if (items == null || !items.Any())
+                return Json(new { success = false, error = "Список порожній" });
+
+            int created = 0;
+            foreach (var item in items)
+            {
+                if (string.IsNullOrWhiteSpace(item.Name) || item.TeacherId <= 0)
+                    continue;
+
+                var subject = new Subject
+                {
+                    Name = item.Name.Trim(),
+                    TeacherId = item.TeacherId
+                };
+
+                _context.Subject.Add(subject);
+                await _context.SaveChangesAsync();
+
+                _context.SubjectTeacher.Add(new SubjectTeacher
+                {
+                    SubjectId = subject.Id,
+                    TeacherId = item.TeacherId
+                });
+
+                created++;
+            }
+
+            await _context.SaveChangesAsync();
+            return Json(new { success = true, created });
+        }
+
+        [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteSubject(int id)
         {
@@ -1559,6 +1593,35 @@ namespace EduLog.Controllers
             return RedirectToAction(nameof(Schedule), new { yearId, classId });
         }
 
+        [HttpGet]
+        public IActionResult GetTeacherSchedule(int yearId, int teacherId)
+        {
+            var schoolId = _tenantService.SchoolId;
+            if (schoolId == null)
+                return BadRequest(new { success = false, message = "School is not selected." });
+
+            var slots = _context.ScheduleSlot
+                .Include(s => s.Subject)
+                .Include(s => s.Class)
+                .Where(s => s.AcademicYearId == yearId
+                    && s.TeacherId == teacherId
+                    && (!schoolId.HasValue || s.SchoolId == schoolId.Value || s.SchoolId == 0))
+                .OrderBy(s => s.DayOfWeek)
+                .ThenBy(s => s.LessonNumber)
+                .Select(s => new
+                {
+                    s.DayOfWeek,
+                    s.LessonNumber,
+                    subjectName  = s.Subject != null ? s.Subject.Name : string.Empty,
+                    className    = s.Class   != null ? s.Class.Name   : string.Empty,
+                    s.Room,
+                    subjectColor = (string?)null   // color resolved client-side from overview cache
+                })
+                .ToList();
+
+            return Json(slots);
+        }
+
         private async Task<IActionResult> GenerateAndPersistScheduleAsync(
             int yearId,
             int? classId,
@@ -1630,7 +1693,7 @@ namespace EduLog.Controllers
             }
         }
 
-        private static async Task ReplaceScheduleSlotsAsync(
+        private async Task ReplaceScheduleSlotsAsync(
             EduLogContext context,
             int schoolId,
             int yearId,
@@ -1638,11 +1701,32 @@ namespace EduLog.Controllers
             CancellationToken cancellationToken,
             bool mergeExisting = false)
         {
+            var validSubjectIds = await context.Subject
+                .Where(s => s.SchoolId == schoolId)
+                .Select(s => s.Id)
+                .ToListAsync(cancellationToken);
+
+            var validTeacherIds = await context.Teacher
+                .Where(t => t.SchoolId == schoolId)
+                .Select(t => t.Id)
+                .ToListAsync(cancellationToken);
+
+            var validClassIds = await context.Class
+                .Where(c => c.SchoolId == schoolId)
+                .Select(c => c.Id)
+                .ToListAsync(cancellationToken);
+
+            var subjectIdSet = validSubjectIds.ToHashSet();
+            var teacherIdSet = validTeacherIds.ToHashSet();
+            var classIdSet = validClassIds.ToHashSet();
+
             var slots = generatedSlots
                 .Where(slot => slot.AcademicYearId == yearId && slot.SchoolId == schoolId)
                 .GroupBy(slot => new { slot.ClassId, slot.DayOfWeek, slot.LessonNumber })
                 .Select(group => group.Last())
                 .ToList();
+
+            var skippedSlots = 0;
 
             var fixedRooms = await context.Subject
                 .Where(s => s.SchoolId == schoolId && s.IsRoomFixed && s.DefaultRoomId != null)
@@ -1664,9 +1748,15 @@ namespace EduLog.Controllers
 
             foreach (var slot in slots)
             {
+                if (!subjectIdSet.Contains(slot.SubjectId) || !teacherIdSet.Contains(slot.TeacherId) || !classIdSet.Contains(slot.ClassId))
+                {
+                    skippedSlots++;
+                    continue;
+                }
+
                 var fixedRoom = fixedRooms.TryGetValue(slot.SubjectId, out var configuredRoom) ? configuredRoom : null;
                 var classRoom = classRooms.TryGetValue(slot.ClassId, out var homeRoom) ? homeRoom : null;
-                var resolvedRoom = fixedRoom ?? (!string.IsNullOrWhiteSpace(slot.Room) ? slot.Room : classRoom);
+                var resolvedRoom = fixedRoom ?? classRoom ?? (!string.IsNullOrWhiteSpace(slot.Room) ? slot.Room : null);
 
                 var existingSlot = mergeExisting
                     ? await context.ScheduleSlot.FirstOrDefaultAsync(
@@ -1697,6 +1787,11 @@ namespace EduLog.Controllers
                     LessonNumber = slot.LessonNumber,
                     Room = resolvedRoom
                 });
+            }
+
+            if (skippedSlots > 0)
+            {
+                _logger.LogWarning("Skipped {SkippedSlots} generated slots due to missing subject/teacher/class mappings.", skippedSlots);
             }
 
             await context.SaveChangesAsync(cancellationToken);
