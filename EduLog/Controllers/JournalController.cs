@@ -1,5 +1,6 @@
 ﻿using EduLog.Data;
 using EduLog.Models;
+using EduLog.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -12,11 +13,16 @@ namespace EduLog.Controllers
     {
         private readonly EduLogContext _context;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly IGamificationService _gamification;
 
-        public JournalController(EduLogContext context, UserManager<ApplicationUser> userManager)
+        public JournalController(
+            EduLogContext context,
+            UserManager<ApplicationUser> userManager,
+            IGamificationService gamification)
         {
             _context = context;
             _userManager = userManager;
+            _gamification = gamification;
         }
 
         private async Task<Teacher?> GetCurrentTeacherAsync()
@@ -24,6 +30,16 @@ namespace EduLog.Controllers
             var user = await _userManager.GetUserAsync(User);
             if (user?.TeacherId == null) return null;
             return _context.Teacher.FirstOrDefault(t => t.Id == user.TeacherId);
+        }
+
+        // Source of truth: SubjectTeacher M2M. A class is "the teacher's"
+        // if at least one of its bound subjects assigns this teacher.
+        private IQueryable<Class> ClassesForTeacher(int teacherId)
+        {
+            return _context.Class
+                .Where(c => c.ClassSubjects
+                    .Any(cs => cs.Subject.SubjectTeachers
+                        .Any(st => st.TeacherId == teacherId)));
         }
 
         public async Task<IActionResult> TeacherSchedule()
@@ -123,7 +139,7 @@ namespace EduLog.Controllers
             // Data for class/subject switcher
             var teacher = GetCurrentTeacherAsync().Result;
             var allClasses = teacher != null
-                ? _context.Class.Where(c => c.ClassSubjects.Any(cs => cs.Subject.TeacherId == teacher.Id)).ToList()
+                ? ClassesForTeacher(teacher.Id).ToList()
                 : new List<Class>();
 
             var subjectsForClass = _context.ClassSubject
@@ -168,31 +184,30 @@ namespace EduLog.Controllers
             if (teacher == null)
                 return RedirectToAction("Index", "Profile");
 
-            var classes = _context.Class
-             .Where(c => c.ClassSubjects.Any(cs => cs.Subject.TeacherId == teacher.Id))
-             .ToList();
+            var classes = ClassesForTeacher(teacher.Id).ToList();
 
             if (classes.Count == 0)
                 return RedirectToAction("Index", "Profile");
-            else if (classes.Count == 1)
+            if (classes.Count == 1)
                 return RedirectToAction("SelectSubject", new { classId = classes[0].Id });
-            else
-                return RedirectToAction("SelectClasses");
-            return View();
+            return RedirectToAction("SelectClasses");
         }
 
         public async Task<IActionResult> SelectSubject(int classId)
         {
             var teacher = await GetCurrentTeacherAsync();
+            if (teacher == null)
+                return RedirectToAction("Index", "Profile");
+
+            // Only subjects taught BY THIS TEACHER in this class
             var subjects = _context.ClassSubject
-                .Where(cs => cs.ClassId == classId)
+                .Where(cs => cs.ClassId == classId
+                    && cs.Subject.SubjectTeachers.Any(st => st.TeacherId == teacher.Id))
                 .Select(cs => cs.Subject)
                 .ToList();
-            var cls = _context.Class
-                .FirstOrDefault(c => c.Id == classId);
-            var classes = _context.Class
-                .Where(c => c.TeacherId == teacher.Id)
-                .ToList();
+
+            var cls = _context.Class.FirstOrDefault(c => c.Id == classId);
+            var classes = ClassesForTeacher(teacher.Id).ToList();
 
             if (subjects.Count == 1)
             {
@@ -209,15 +224,12 @@ namespace EduLog.Controllers
             if (teacher == null)
                 return RedirectToAction("Index", "Profile");
 
-            var classes = _context.Class
-                .Where(c => c.ClassSubjects.Any(cs => cs.Subject.TeacherId == teacher.Id))
-                .ToList();
-
+            var classes = ClassesForTeacher(teacher.Id).ToList();
             return View(classes);
         }
 
         [HttpPost]
-        public IActionResult SaveCell([FromBody] SaveCellRequest request)
+        public async Task<IActionResult> SaveCell([FromBody] SaveCellRequest request)
         {
             if (request == null)
                 return BadRequest();
@@ -239,18 +251,20 @@ namespace EduLog.Controllers
                 a.SubjectId == request.SubjectId &&
                 a.Date.Date == date.Date);
 
+            bool wasAbsenceChanged = false;
+            int? newGradeValue = null;
+            int? previousGradeValue = grade?.Value;
+
             // Empty cell — remove both grade and absence
             if (string.IsNullOrWhiteSpace(raw))
             {
                 if (grade != null) _context.Grade.Remove(grade);
-                if (absence != null) _context.Absence.Remove(absence);
-                _context.SaveChanges();
-                return Ok();
+                if (absence != null) { _context.Absence.Remove(absence); wasAbsenceChanged = true; }
+                await _context.SaveChangesAsync();
             }
-
-            // "Н" — mark absence, remove grade if any
-            if (isAbsence)
+            else if (isAbsence)
             {
+                // "Н" — mark absence, remove grade if any
                 if (grade != null) _context.Grade.Remove(grade);
                 if (absence == null)
                 {
@@ -261,39 +275,59 @@ namespace EduLog.Controllers
                         Date = date,
                         Reason = ""
                     });
+                    wasAbsenceChanged = true;
                 }
-                _context.SaveChanges();
-                return Ok();
-            }
-
-            // Validate grade 1-12
-            if (!int.TryParse(raw, out var val) || val < 1 || val > 12)
-            {
-                return BadRequest(new { error = "Допустимі значення: 1-12 або Н" });
-            }
-
-            // Save grade, remove absence if any
-            if (absence != null) _context.Absence.Remove(absence);
-
-            if (grade == null)
-            {
-                // Додаємо нову оцінку
-                grade = new Grade
-                {
-                    StudentId = request.StudentId,
-                    SubjectId = request.SubjectId,
-                    Date = date,
-                    Value = val
-                };
-                _context.Grade.Add(grade);
+                await _context.SaveChangesAsync();
             }
             else
             {
-                grade.Value = val;
-                _context.Grade.Update(grade);
+                // Validate grade 1-12
+                if (!int.TryParse(raw, out var val) || val < 1 || val > 12)
+                {
+                    return BadRequest(new { error = "Допустимі значення: 1-12 або Н" });
+                }
+
+                // Save grade, remove absence if any
+                if (absence != null) { _context.Absence.Remove(absence); wasAbsenceChanged = true; }
+
+                if (grade == null)
+                {
+                    grade = new Grade
+                    {
+                        StudentId = request.StudentId,
+                        SubjectId = request.SubjectId,
+                        Date = date,
+                        Value = val
+                    };
+                    _context.Grade.Add(grade);
+                    newGradeValue = val;
+                }
+                else
+                {
+                    if (grade.Value != val)
+                    {
+                        newGradeValue = val;
+                    }
+                    grade.Value = val;
+                    _context.Grade.Update(grade);
+                }
+
+                await _context.SaveChangesAsync();
             }
 
-            _context.SaveChanges();
+            // Gamification: award XP/coins for newly added or changed grade.
+            // Only award when value increased compared to previous (avoid farming by re-saving same value).
+            if (newGradeValue.HasValue && (previousGradeValue == null || newGradeValue.Value > previousGradeValue.Value))
+            {
+                await _gamification.ProcessGradeAddedAsync(request.StudentId, newGradeValue.Value);
+            }
+
+            // Recalculate streak when attendance changed (absence added/removed) for that day.
+            if (wasAbsenceChanged)
+            {
+                await _gamification.RecalculateStreakAsync(request.StudentId, date);
+            }
+
             return Ok();
         }
 

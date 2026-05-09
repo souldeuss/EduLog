@@ -1,0 +1,255 @@
+@model EduLog.Models.StudentArea.StudentDashboardViewModel
+@using EduLog.Models
+
+@{
+    ViewData["Title"] = "Головна";
+    var s = Model.Summary;
+}
+
+<link rel="stylesheet" href="~/css/student.css" asp-append-version="true" />
+
+<div class="student-area">
+    <div class="student-container">
+
+        <partial name="_StudentNav" model="@Model.Summary" />
+
+        <!-- ───── Welcome Hero ───── -->
+        <div class="student-hero">
+            <div class="row align-items-center">
+                <div class="col-md-auto text-center">
+                    <div class="student-avatar">@s.Initials</div>
+                </div>
+                <div class="col">
+                    <h2 class="mb-1">Привіт, @s.FullName.Split(' ').LastOrDefault()! 👋</h2>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <span class="level-badge">
+                            <i class="bi bi-star-fill"></i>
+                            Рівень @s.Level — @s.LevelTitle
+                        </span>
+                        @if (Model.NextLesson != null)
+                        {
+                            <span class="level-badge">
+                                <i class="bi bi-clock"></i>
+                                Наступний урок: @Model.NextLesson.SubjectName о @Model.NextLesson.Date.ToString("HH:mm")
+                            </span>
+                        }
+                    </div>
+                    <div class="xp-bar">
+                        <div class="xp-bar-fill" style="width: @s.XpProgressPercent%"></div>
+                    </div>
+                    <div class="xp-text">
+                        @s.ExperiencePoints / @s.XpForNextLevel XP
+                        @if (s.Level < 7)
+                        {
+                            <span> — до рівня @(s.Level + 1) залишилось @(s.XpForNextLevel - s.ExperiencePoints) XP</span>
+                        }
+                        else
+                        {
+                            <span> — максимальний рівень досягнуто! 🏆</span>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ───── Stat Cards ───── -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon">🔥</div>
+                    <div class="stat-value">@s.AttendanceStreak</div>
+                    <div class="stat-label">днів стрік</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon">🪙</div>
+                    <div class="stat-value">@s.EduCoins</div>
+                    <div class="stat-label">EduCoins</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-value">@(s.GradeAverage > 0 ? s.GradeAverage.ToString("0.0") : "—")</div>
+                    <div class="stat-label">@s.GradeAverageStatus</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon">📅</div>
+                    @if (Model.NextLesson != null)
+                    {
+                        <div class="stat-value" style="font-size: 1.1rem;">@Model.NextLesson.SubjectName</div>
+                        <div class="stat-label">
+                            @Model.NextLesson.Date.ToString("HH:mm")
+                            @if (!string.IsNullOrEmpty(Model.NextLesson.Room))
+                            {
+                                <span> · каб. @Model.NextLesson.Room</span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="stat-value" style="font-size: 1.1rem;">—</div>
+                        <div class="stat-label">Уроків більше немає</div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <!-- ───── Today's Schedule ───── -->
+            <div class="col-lg-6">
+                <div class="tile-card">
+                    <div class="tile-header">
+                        <i class="bi bi-calendar-day"></i> Сьогодні
+                        <small class="ms-2 opacity-75">@DateTime.Today.ToString("dd MMMM, dddd", new System.Globalization.CultureInfo("uk-UA"))</small>
+                    </div>
+                    <div class="tile-body p-0">
+                        @if (Model.TodaySchedule.Count == 0)
+                        {
+                            <div class="p-3 text-muted text-center">
+                                <i class="bi bi-emoji-smile"></i> Сьогодні уроків немає!
+                            </div>
+                        }
+                        else
+                        {
+                            <table class="table table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:50px;">№</th>
+                                        <th>Предмет</th>
+                                        <th>Час</th>
+                                        <th>Каб.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var lesson in Model.TodaySchedule)
+                                    {
+                                        var rowCls = lesson.IsCurrent ? "table-success fw-bold" :
+                                                     (lesson.Date.TimeOfDay < DateTime.Now.TimeOfDay ? "text-muted" : "");
+                                        <tr class="@rowCls">
+                                            <td>@lesson.LessonNumber</td>
+                                            <td>
+                                                @lesson.SubjectName
+                                                @if (lesson.IsCurrent)
+                                                {
+                                                    <span class="badge bg-success ms-1">зараз</span>
+                                                }
+                                                else if (lesson.Date.TimeOfDay < DateTime.Now.TimeOfDay)
+                                                {
+                                                    <i class="bi bi-check-circle-fill text-success ms-1"></i>
+                                                }
+                                            </td>
+                                            <td>@lesson.Date.ToString("HH:mm")</td>
+                                            <td>@(lesson.Room ?? "—")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- ───── Upcoming Homework ───── -->
+            <div class="col-lg-6">
+                <div class="tile-card">
+                    <div class="tile-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-journal-text"></i> Нові домашні завдання</span>
+                        <a asp-action="Materials" asp-route-filter="homework"
+                           class="btn btn-sm btn-light">Усі</a>
+                    </div>
+                    <div class="tile-body p-0">
+                        @if (Model.UpcomingHomework.Count == 0)
+                        {
+                            <div class="p-3 text-muted text-center">
+                                <i class="bi bi-check-all"></i> Немає невиконаних ДЗ. Молодець!
+                            </div>
+                        }
+                        else
+                        {
+                            <ul class="list-group list-group-flush">
+                                @foreach (var hw in Model.UpcomingHomework)
+                                {
+                                    var deadlineSoon = hw.Deadline.HasValue
+                                        && hw.Deadline.Value <= DateTime.Now.AddDays(2);
+                                    <li class="list-group-item d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <strong>@hw.Title</strong>
+                                            <br />
+                                            <small class="text-muted">@hw.SubjectName</small>
+                                            @if (hw.Deadline.HasValue)
+                                            {
+                                                <small class="@(deadlineSoon ? "text-danger fw-bold" : "text-muted")">
+                                                    · до @hw.Deadline.Value.ToString("dd.MM HH:mm")
+                                                </small>
+                                            }
+                                        </div>
+                                        <a asp-action="Materials"
+                                           asp-route-subjectId="@hw.SubjectId"
+                                           asp-route-filter="homework"
+                                           class="btn btn-sm btn-warning">
+                                            Здати
+                                        </a>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- ───── Recent Grades ───── -->
+            <div class="col-lg-6">
+                <div class="tile-card">
+                    <div class="tile-header">
+                        <i class="bi bi-graph-up"></i> Останні оцінки
+                    </div>
+                    <div class="tile-body p-0">
+                        @if (Model.RecentGrades.Count == 0)
+                        {
+                            <div class="p-3 text-muted text-center">Поки немає оцінок.</div>
+                        }
+                        else
+                        {
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    @foreach (var g in Model.RecentGrades)
+                                    {
+                                        string colorClass = g.Value >= 10 ? "bg-success" :
+                                                           (g.Value >= 7 ? "bg-primary" :
+                                                           (g.Value >= 4 ? "bg-warning text-dark" : "bg-danger"));
+                                        <tr>
+                                            <td><strong>@g.SubjectName</strong></td>
+                                            <td><span class="badge @colorClass" style="font-size: 0.95rem;">@g.Value</span></td>
+                                            <td class="text-muted small">@g.Date.ToString("dd.MM.yyyy")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- ───── Quick Profile Link ───── -->
+            <div class="col-lg-6 d-flex">
+                <div class="tile-card flex-grow-1 d-flex flex-column">
+                    <div class="tile-header">
+                        <i class="bi bi-person-bounding-box"></i> Мій прогрес
+                    </div>
+                    <div class="tile-body text-center flex-grow-1 d-flex flex-column justify-content-center">
+                        <p class="mb-3">
+                            Подивись детальну статистику, досягнення та графік оцінок у профілі.
+                        </p>
+                        <a asp-action="Profile" class="btn btn-primary">
+                            <i class="bi bi-person-circle"></i> Відкрити профіль
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

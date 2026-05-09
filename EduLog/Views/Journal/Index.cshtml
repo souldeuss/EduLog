@@ -28,6 +28,11 @@
             <option value="@s.Id" selected="@(s.Id == Model.Subject?.Id)">@s.Name</option>
     }
     </select>
+    <a class="btn btn-outline-primary btn-sm ms-auto"
+       asp-controller="Teacher" asp-action="Materials"
+       asp-route-classId="@Model.Class?.Id" asp-route-subjectId="@Model.Subject?.Id">
+        <i class="bi bi-paperclip"></i> Матеріали та ДЗ
+    </a>
 </div>
 
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">

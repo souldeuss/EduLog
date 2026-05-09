@@ -1,0 +1,118 @@
+@model EduLog.Models.StudentArea.StudentCoinsViewModel
+
+@{
+    ViewData["Title"] = "EduCoins";
+    var s = Model.Summary;
+}
+
+<link rel="stylesheet" href="~/css/student.css" asp-append-version="true" />
+
+<div class="student-area">
+    <div class="student-container">
+
+        <partial name="_StudentNav" model="@Model.Summary" />
+
+        <div class="student-hero text-center">
+            <h2 class="mb-3"><i class="bi bi-coin"></i> Мої EduCoins</h2>
+            <div class="coin-balance">@s.EduCoins 🪙</div>
+            <p class="lead mt-2 mb-0">Заробляй монети за оцінки, відвідуваність та виконані завдання!</p>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <strong>Як заробити?</strong>
+                    <ul class="small mt-2 mb-0 ps-3">
+                        <li>Оцінка 10-12 → +5 🪙</li>
+                        <li>Оцінка 7-9 → +2 🪙</li>
+                        <li>Оцінка 4-6 → +1 🪙</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div class="stat-icon">🔥</div>
+                    <strong>Стрік-бонуси</strong>
+                    <ul class="small mt-2 mb-0 ps-3">
+                        <li>3 дні поспіль → +5 🪙</li>
+                        <li>7 днів поспіль → +10 🪙</li>
+                        <li>30 днів поспіль → +30 🪙</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div class="stat-icon">📝</div>
+                    <strong>Інше</strong>
+                    <ul class="small mt-2 mb-0 ps-3">
+                        <li>Здача ДЗ вчасно → +3 🪙</li>
+                        <li>Підвищення рівня → +20 🪙</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="tile-card">
+            <div class="tile-header">📜 Історія транзакцій</div>
+            <div class="tile-body p-0">
+                @if (Model.Transactions.Count == 0)
+                {
+                    <div class="p-4 text-muted text-center">
+                        <i class="bi bi-piggy-bank"></i>
+                        Поки що немає транзакцій. Заробляй монети — і вони з'являться тут!
+                    </div>
+                }
+                else
+                {
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Дата</th>
+                                <th>Подія</th>
+                                <th class="text-end">Кількість</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var t in Model.Transactions)
+                            {
+                                var positive = t.Amount > 0;
+                                <tr>
+                                    <td>@t.CreatedAt.ToString("dd.MM.yyyy HH:mm")</td>
+                                    <td>@t.Reason</td>
+                                    <td class="text-end fw-bold @(positive ? "text-success" : "text-danger")">
+                                        @(positive ? "+" : "")@t.Amount 🪙
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+
+        @if (Model.TotalPages > 1)
+        {
+            <nav aria-label="Транзакції" class="mt-3">
+                <ul class="pagination justify-content-center">
+                    <li class="page-item @(Model.Page <= 1 ? "disabled" : "")">
+                        <a class="page-link" asp-action="Coins" asp-route-page="@(Model.Page - 1)">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
+                    @for (int p = 1; p <= Model.TotalPages; p++)
+                    {
+                        <li class="page-item @(p == Model.Page ? "active" : "")">
+                            <a class="page-link" asp-action="Coins" asp-route-page="@p">@p</a>
+                        </li>
+                    }
+                    <li class="page-item @(Model.Page >= Model.TotalPages ? "disabled" : "")">
+                        <a class="page-link" asp-action="Coins" asp-route-page="@(Model.Page + 1)">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        }
+    </div>
+</div>

@@ -1,0 +1,85 @@
+@model EduLog.Models.StudentArea.StudentScheduleViewModel
+
+@{
+    ViewData["Title"] = "Розклад";
+    var s = Model.Summary;
+    var dayNames = new[] { "Пн", "Вт", "Ср", "Чт", "Пт", "Сб" };
+}
+
+<link rel="stylesheet" href="~/css/student.css" asp-append-version="true" />
+
+<div class="student-area">
+    <div class="student-container">
+
+        <partial name="_StudentNav" model="@Model.Summary" />
+
+        <div class="student-hero">
+            <h2 class="mb-2"><i class="bi bi-calendar-week-fill"></i> Розклад: @s.ClassName</h2>
+            <p class="lead mb-0">
+                Тиждень @Model.WeekStart.ToString("dd.MM") — @Model.WeekEnd.ToString("dd.MM.yyyy")
+            </p>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <a asp-action="Schedule" asp-route-weekStart="@Model.PreviousWeek.ToString("yyyy-MM-dd")"
+               class="btn btn-outline-primary">
+                <i class="bi bi-chevron-left"></i> Попередній тиждень
+            </a>
+            <a asp-action="Schedule" class="btn btn-warning">
+                <i class="bi bi-calendar-check"></i> Поточний тиждень
+            </a>
+            <a asp-action="Schedule" asp-route-weekStart="@Model.NextWeek.ToString("yyyy-MM-dd")"
+               class="btn btn-outline-primary">
+                Наступний тиждень <i class="bi bi-chevron-right"></i>
+            </a>
+        </div>
+
+        <div class="schedule-grid">
+            <!-- Header row -->
+            <div></div>
+            @for (int day = 1; day <= 6; day++)
+            {
+                var dayDate = Model.WeekStart.AddDays(day - 1);
+                var isToday = dayDate.Date == DateTime.Today;
+                <div class="head" style="@(isToday ? "background: #28a745;" : "")">
+                    @dayNames[day - 1]
+                    <div class="small fw-normal">@dayDate.ToString("dd.MM")</div>
+                </div>
+            }
+
+            <!-- Lesson rows -->
+            @for (int lesson = 1; lesson <= Model.MaxLessonNumber; lesson++)
+            {
+                <div class="lesson-num">@lesson</div>
+                @for (int day = 1; day <= 6; day++)
+                {
+                    if (Model.Cells.TryGetValue((day, lesson), out var cell))
+                    {
+                        var classes = "cell"
+                            + (cell.IsCurrent ? " current" : "")
+                            + (cell.HasAbsenceThisWeek ? " absent" : "");
+                        <div class="@classes">
+                            <div class="subj">@cell.SubjectName</div>
+                            <div class="meta">@cell.TeacherName</div>
+                            @if (!string.IsNullOrEmpty(cell.Room))
+                            {
+                                <div class="meta">
+                                    <i class="bi bi-geo-alt"></i> @cell.Room
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="cell empty"></div>
+                    }
+                }
+            }
+        </div>
+
+        <p class="text-muted mt-3 small">
+            <i class="bi bi-info-circle"></i>
+            Поточний урок підсвічується зеленим. Червона рамка — у цей день був пропуск.
+        </p>
+    </div>
+</div>

@@ -588,8 +588,127 @@ namespace EduLog.Controllers
             if (cls == null) return NotFound();
 
             var students = _context.Student.Where(s => s.ClassId == id).OrderBy(s => s.Surname).ToList();
+            var studentIds = students.Select(s => s.Id).ToList();
+
+            var pendingInvitations = _context.Invitation
+                .Where(i => i.Role == "Student"
+                    && i.StudentId != null
+                    && studentIds.Contains(i.StudentId.Value)
+                    && !i.IsUsed
+                    && i.ExpiresAt > DateTime.UtcNow)
+                .ToDictionary(i => i.StudentId!.Value, i => i);
+
             ViewData["Class"] = cls;
+            ViewData["PendingInvitations"] = pendingInvitations;
             return View(students);
+        }
+
+        // ───────── Student account invitations ─────────
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> InviteStudent(int studentId, string? email, CancellationToken cancellationToken)
+        {
+            var student = await _context.Student.FirstOrDefaultAsync(s => s.Id == studentId);
+            if (student == null)
+            {
+                TempData["Error"] = "Учня не знайдено.";
+                return RedirectToAction(nameof(Classes));
+            }
+
+            if (student.ApplicationUserId != null)
+            {
+                TempData["Error"] = "У цього учня вже є акаунт.";
+                return RedirectToAction(nameof(ClassStudents), new { id = student.ClassId });
+            }
+
+            if (string.IsNullOrWhiteSpace(email))
+            {
+                TempData["Error"] = "Email обов'язковий для запрошення.";
+                return RedirectToAction(nameof(ClassStudents), new { id = student.ClassId });
+            }
+
+            // Cancel any previous pending invitation for this student
+            var oldInvitations = _context.Invitation
+                .Where(i => i.StudentId == studentId && !i.IsUsed)
+                .ToList();
+            foreach (var oi in oldInvitations) oi.IsUsed = true;
+
+            var token = Guid.NewGuid().ToString("N");
+            var invitation = new Invitation
+            {
+                SchoolId = _tenantService.SchoolId!.Value,
+                Email = email.Trim(),
+                Token = token,
+                CreatedAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.AddDays(14),
+                IsUsed = false,
+                Role = "Student",
+                StudentId = studentId
+            };
+            _context.Invitation.Add(invitation);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            var link = Url.Action("RegisterStudent", "Account", new { token }, Request.Scheme);
+            if (!string.IsNullOrWhiteSpace(link))
+            {
+                try
+                {
+                    await _emailService.SendInvitationAsync(email.Trim(), link, cancellationToken);
+                    TempData["InvitationSentTo"] = email;
+                }
+                catch (ApplicationException ex)
+                {
+                    TempData["Error"] = $"Запрошення створено, але email не надіслано: {ex.Message}";
+                }
+                TempData["InvitationLink"] = link;
+            }
+
+            return RedirectToAction(nameof(ClassStudents), new { id = student.ClassId });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> RevokeStudentInvitation(int invitationId, CancellationToken cancellationToken)
+        {
+            var invitation = await _context.Invitation.FirstOrDefaultAsync(i => i.Id == invitationId);
+            if (invitation == null)
+            {
+                return NotFound();
+            }
+
+            int? classId = null;
+            if (invitation.StudentId != null)
+            {
+                classId = (await _context.Student.FirstOrDefaultAsync(s => s.Id == invitation.StudentId))?.ClassId;
+            }
+
+            invitation.IsUsed = true;
+            await _context.SaveChangesAsync(cancellationToken);
+
+            return classId.HasValue
+                ? RedirectToAction(nameof(ClassStudents), new { id = classId.Value })
+                : RedirectToAction(nameof(Classes));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> UnlinkStudentAccount(int studentId, CancellationToken cancellationToken)
+        {
+            var student = await _context.Student.FirstOrDefaultAsync(s => s.Id == studentId);
+            if (student == null) return NotFound();
+
+            if (student.ApplicationUserId != null)
+            {
+                var user = await _userManager.FindByIdAsync(student.ApplicationUserId);
+                if (user != null)
+                {
+                    await _userManager.DeleteAsync(user);
+                }
+                student.ApplicationUserId = null;
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+
+            return RedirectToAction(nameof(ClassStudents), new { id = student.ClassId });
         }
 
         [HttpPost]

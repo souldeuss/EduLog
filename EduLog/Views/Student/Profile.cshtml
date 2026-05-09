@@ -1,0 +1,182 @@
+@model EduLog.Models.StudentArea.StudentProfileViewModel
+@using System.Text.Json
+
+@{
+    ViewData["Title"] = "Профіль";
+    var s = Model.Summary;
+    var chartLabelsJson = JsonSerializer.Serialize(Model.ChartLabels);
+    var chartSeriesJson = JsonSerializer.Serialize(Model.ChartSeries);
+}
+
+<link rel="stylesheet" href="~/css/student.css" asp-append-version="true" />
+
+<div class="student-area">
+    <div class="student-container">
+
+        <partial name="_StudentNav" model="@Model.Summary" />
+
+        <!-- ───── Hero ───── -->
+        <div class="student-hero">
+            <div class="row align-items-center">
+                <div class="col-md-auto text-center">
+                    <div class="student-avatar student-avatar-large">@s.Initials</div>
+                </div>
+                <div class="col">
+                    <h1 class="mb-1">@s.FullName</h1>
+                    <p class="lead mb-2">
+                        <i class="bi bi-mortarboard"></i> @s.SchoolName · @s.ClassName клас
+                    </p>
+                    <div class="mb-2">
+                        <span class="level-badge me-2">
+                            <i class="bi bi-star-fill"></i>
+                            Рівень @s.Level
+                        </span>
+                        <strong>@s.LevelTitle</strong>
+                    </div>
+                    <div class="xp-bar" style="height: 18px;">
+                        <div class="xp-bar-fill" style="width: @s.XpProgressPercent%"></div>
+                    </div>
+                    <div class="xp-text mt-1">
+                        <strong>@s.ExperiencePoints / @s.XpForNextLevel XP</strong>
+                        @if (s.Level < 7)
+                        {
+                            <span> — до наступного рівня @(s.XpForNextLevel - s.ExperiencePoints) XP</span>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ───── Stats Grid ───── -->
+        <h4 class="mt-3 mb-3 text-secondary">📊 Характеристики</h4>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon">🔥</div>
+                    <div class="stat-value">@s.AttendanceStreak</div>
+                    <div class="stat-label">днів без пропуску підряд</div>
+                </div>
+            </div>
+            <div class="col-md-4 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon">🪙</div>
+                    <div class="stat-value">@s.EduCoins</div>
+                    <div class="stat-label">EduCoins на балансі</div>
+                </div>
+            </div>
+            <div class="col-md-4 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-value">@(s.GradeAverage > 0 ? s.GradeAverage.ToString("0.00") : "—")</div>
+                    <div class="stat-label">@s.GradeAverageStatus</div>
+                </div>
+            </div>
+            <div class="col-md-4 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon">🏆</div>
+                    <div class="stat-value">@Model.TotalXp</div>
+                    <div class="stat-label">XP набрано всього</div>
+                </div>
+            </div>
+            <div class="col-md-4 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon">📚</div>
+                    <div class="stat-value">@Model.HomeworkSubmittedCount / @Model.HomeworkAssignedCount</div>
+                    <div class="stat-label">здано ДЗ (@Model.HomeworkPercent%)</div>
+                </div>
+            </div>
+            <div class="col-md-4 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon">🎯</div>
+                    <div class="stat-value">@Model.AttendancePercent%</div>
+                    <div class="stat-label">присутність за рік</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ───── Achievements ───── -->
+        <h4 class="mt-3 mb-3 text-secondary">🏅 Досягнення</h4>
+        <div class="row g-3 mb-4">
+            @foreach (var a in Model.Achievements)
+            {
+                <div class="col-md-3 col-6">
+                    <div class="achievement @(a.Unlocked ? "" : "locked")">
+                        <div class="ach-icon">@a.Icon</div>
+                        <div class="ach-title">@a.Title</div>
+                        <div class="ach-desc">@a.Description</div>
+                        @if (a.Unlocked)
+                        {
+                            <div class="text-success small mt-1">
+                                <i class="bi bi-check-circle-fill"></i> Відкрито
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-muted small mt-1">
+                                <i class="bi bi-lock-fill"></i> Заблоковано
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- ───── Grade Chart ───── -->
+        <h4 class="mt-3 mb-3 text-secondary">📈 Графік оцінок (останні 30 днів)</h4>
+        <div class="tile-card mb-4">
+            <div class="tile-body">
+                @if (Model.ChartSeries.Count == 0)
+                {
+                    <p class="text-muted text-center my-4">Поки що немає оцінок за останні 30 днів.</p>
+                }
+                else
+                {
+                    <canvas id="gradeChart" style="max-height: 380px;"></canvas>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @if (Model.ChartSeries.Count > 0)
+    {
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+        <script>
+            (function () {
+                const labels = @Html.Raw(chartLabelsJson);
+                const series = @Html.Raw(chartSeriesJson);
+                const palette = ['#6f42c1', '#ffc107', '#28a745', '#17a2b8', '#e83e8c', '#fd7e14', '#20c997'];
+
+                const datasets = Object.entries(series).map(([subjectName, data], i) => ({
+                    label: subjectName,
+                    data: data,
+                    borderColor: palette[i % palette.length],
+                    backgroundColor: palette[i % palette.length] + '22',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    spanGaps: true,
+                    pointRadius: 4
+                }));
+
+                const ctx = document.getElementById('gradeChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: labels, datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { min: 1, max: 12, title: { display: true, text: 'Оцінка' } },
+                            x: { title: { display: true, text: 'Дата' } }
+                        },
+                        plugins: {
+                            legend: { position: 'bottom' },
+                            tooltip: { mode: 'index', intersect: false }
+                        }
+                    }
+                });
+            })();
+        </script>
+    }
+}

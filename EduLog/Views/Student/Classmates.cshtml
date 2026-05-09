@@ -1,0 +1,94 @@
+@model EduLog.Models.StudentArea.StudentClassmatesViewModel
+
+@{
+    ViewData["Title"] = "Однокласники";
+    var s = Model.Summary;
+}
+
+<link rel="stylesheet" href="~/css/student.css" asp-append-version="true" />
+
+<div class="student-area">
+    <div class="student-container">
+
+        <partial name="_StudentNav" model="@Model.Summary" />
+
+        <div class="student-hero">
+            <h2 class="mb-1"><i class="bi bi-people-fill"></i> Однокласники: @s.ClassName</h2>
+            <p class="lead mb-0">
+                Дружнє змагання — підіймайся вгору, виконуй ДЗ та підтримуй стрік!
+            </p>
+        </div>
+
+        <div class="tile-card">
+            <div class="tile-header">🏆 Рейтинг класу</div>
+            <div class="tile-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0 align-middle" id="classmatesTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-center" style="width:60px;">#</th>
+                                <th>Учень</th>
+                                <th class="text-center">Рівень</th>
+                                <th class="text-center">EduCoins</th>
+                                <th class="text-center">Стрік</th>
+                                <th class="text-center">Сер. бал</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ int rank = 1; }
+                            @foreach (var c in Model.Rows)
+                            {
+                                string rankClass = rank switch
+                                {
+                                    1 => "gold",
+                                    2 => "silver",
+                                    3 => "bronze",
+                                    _ => ""
+                                };
+                                <tr class="leaderboard-row @(c.IsCurrent ? "is-current" : "")">
+                                    <td class="text-center">
+                                        <span class="leaderboard-rank @rankClass">@rank</span>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="student-avatar student-avatar-sm">@c.Initials</div>
+                                            <div>
+                                                <div class="fw-semibold">
+                                                    @c.FullName
+                                                    @if (c.IsCurrent)
+                                                    {
+                                                        <span class="badge bg-primary ms-2">Це ти</span>
+                                                    }
+                                                </div>
+                                                <small class="text-muted">@c.LevelTitle</small>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-primary" style="font-size: 0.95rem;">@c.Level</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="fw-bold text-warning">@c.EduCoins 🪙</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <strong>@c.AttendanceStreak</strong>
+                                        <small class="text-muted">днів 🔥</small>
+                                    </td>
+                                    <td class="text-center">
+                                        @(c.GradeAverage > 0 ? c.GradeAverage.ToString("0.0") : "—")
+                                    </td>
+                                </tr>
+                                rank++;
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-muted mt-3 small">
+            <i class="bi bi-shield-check"></i>
+            Конфіденційність: показуються тільки агреговані показники. Окремих оцінок інших учнів не видно.
+        </p>
+    </div>
+</div>

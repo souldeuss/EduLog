@@ -30,6 +30,10 @@ namespace EduLog.Controllers
 
         public async Task<IActionResult> Index()
         {
+            // Students get their own dedicated profile page
+            if (User.IsInRole("Student"))
+                return RedirectToAction("Profile", "Student");
+
             var teacher = await GetCurrentTeacherAsync() ?? new Teacher();
             List<Class> Classes = _context.Class
                 .Where(c => c.TeacherId == teacher.Id)

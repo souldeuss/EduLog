@@ -1,0 +1,30 @@
+@model EduLog.Models.StudentArea.StudentSummary
+
+
+
+@{
+    var success = TempData["Success"] as string;
+    var error = TempData["Error"] as string;
+    var reward = TempData["GamificationReward"] as string;
+}
+
+@if (!string.IsNullOrEmpty(success))
+{
+    <div class="alert alert-success">@success</div>
+}
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+@if (!string.IsNullOrEmpty(reward))
+{
+    <div class="gamif-toast">🎉 @reward</div>
+    <script>
+        setTimeout(() => {
+            const t = document.querySelector('.gamif-toast');
+            if (t) t.style.transition = 'opacity 0.5s';
+            if (t) t.style.opacity = '0';
+            setTimeout(() => t?.remove(), 500);
+        }, 4000);
+    </script>
+}

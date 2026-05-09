@@ -77,6 +77,17 @@ builder.Services.AddHttpClient<ISchedulerService, SchedulerService>((serviceProv
 // Mailtrap configuration
 builder.Services.AddScoped<IEmailService, MailtrapEmailService>();
 builder.Services.AddHttpClient();
+
+// Gamification
+builder.Services.AddScoped<IGamificationService, GamificationService>();
+builder.Services.AddScoped<IFileStorageService, FileStorageService>();
+
+// Authorization policies
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("StudentOnly", policy => policy.RequireRole("Student"));
+    options.AddPolicy("TeacherOrAdmin", policy => policy.RequireRole("Teacher", "Admin"));
+});
 builder.Services.ConfigureApplicationCookie(options =>
 {
     options.LoginPath = "/Account/Login";
@@ -97,7 +108,7 @@ using (var scope = app.Services.CreateScope())
     await dbContext.Database.MigrateAsync();
 
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    string[] roles = { "Admin", "Teacher" };
+    string[] roles = { "Admin", "Teacher", "Student" };
     foreach (var role in roles)
     {
         if (!await roleManager.RoleExistsAsync(role))

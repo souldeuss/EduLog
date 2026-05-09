@@ -4,6 +4,7 @@ using EduLog.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EduLog.Migrations
 {
     [DbContext(typeof(EduLogContext))]
-    partial class EduLogContextModelSnapshot : ModelSnapshot
+    [Migration("20260509162255_AddStudentGamification")]
+    partial class AddStudentGamification
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -295,12 +298,6 @@ namespace EduLog.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("AttachmentFileName")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("AttachmentPath")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<int>("LessonMaterialId")
                         .HasColumnType("int");
 
@@ -356,14 +353,7 @@ namespace EduLog.Migrations
                     b.Property<bool>("IsUsed")
                         .HasColumnType("bit");
 
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<int>("SchoolId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("StudentId")
                         .HasColumnType("int");
 
                     b.Property<string>("Token")
@@ -373,8 +363,6 @@ namespace EduLog.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("SchoolId");
-
-                    b.HasIndex("StudentId");
 
                     b.ToTable("Invitation");
                 });
@@ -386,12 +374,6 @@ namespace EduLog.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AttachmentFileName")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("AttachmentPath")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("ClassSubjectClassId")
                         .HasColumnType("int");
@@ -944,14 +926,7 @@ namespace EduLog.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("EduLog.Models.Student", "Student")
-                        .WithMany()
-                        .HasForeignKey("StudentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("School");
-
-                    b.Navigation("Student");
                 });
 
             modelBuilder.Entity("EduLog.Models.LessonMaterial", b =>

@@ -1,0 +1,199 @@
+@model List<EduLog.Models.LessonMaterial>
+@using EduLog.Models
+
+@{
+    var cls = ViewData["Class"] as Class;
+    var subject = ViewData["Subject"] as Subject;
+    int totalStudents = (int)(ViewData["TotalStudents"] ?? 0);
+    var submittedCounts = ViewData["SubmittedCounts"] as Dictionary<int, int> ?? new();
+    var reviewedCounts = ViewData["ReviewedCounts"] as Dictionary<int, int> ?? new();
+    int? currentTeacherId = ViewData["CurrentTeacherId"] as int?;
+
+    ViewData["Title"] = $"Матеріали — {cls?.Name} / {subject?.Name}";
+
+    string TypeIcon(MaterialType t) => t switch
+    {
+        MaterialType.Homework => "bi-journal-text",
+        MaterialType.LessonNote => "bi-sticky",
+        MaterialType.Resource => "bi-link-45deg",
+        _ => "bi-file"
+    };
+
+    string TypeLabel(MaterialType t) => t switch
+    {
+        MaterialType.Homework => "Домашнє завдання",
+        MaterialType.LessonNote => "Конспект уроку",
+        MaterialType.Resource => "Ресурс",
+        _ => t.ToString()
+    };
+
+    var success = TempData["Success"] as string;
+    var error = TempData["Error"] as string;
+}
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <a asp-controller="Journal" asp-action="Index" asp-route-classId="@cls?.Id" asp-route-subjectId="@subject?.Id"
+       class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> До журналу
+    </a>
+    <h3 class="mb-0">
+        <i class="bi bi-paperclip"></i>
+        Матеріали: @cls?.Name / @subject?.Name
+    </h3>
+</div>
+
+@if (!string.IsNullOrEmpty(success))
+{
+    <div class="alert alert-success">@success</div>
+}
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row">
+    <div class="col-lg-5 mb-4">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-plus-circle"></i> Новий матеріал
+            </div>
+            <div class="card-body">
+                <form asp-action="CreateMaterial" method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="classId" value="@cls?.Id" />
+                    <input type="hidden" name="subjectId" value="@subject?.Id" />
+
+                    <div class="mb-3">
+                        <label class="form-label">Тип</label>
+                        <select name="type" class="form-select" required>
+                            <option value="Homework">📝 Домашнє завдання</option>
+                            <option value="LessonNote">📓 Конспект уроку</option>
+                            <option value="Resource">🔗 Ресурс</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Заголовок *</label>
+                        <input name="title" class="form-control" required maxlength="200" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Опис</label>
+                        <textarea name="description" class="form-control" rows="3"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Дата уроку</label>
+                        <input name="date" type="date" class="form-control"
+                               value="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Дедлайн (для ДЗ)</label>
+                        <input name="deadline" type="datetime-local" class="form-control" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <i class="bi bi-paperclip"></i> Файл (опціонально, до 25 МБ)
+                        </label>
+                        <input name="attachment" type="file" class="form-control" />
+                        <small class="text-muted">PDF, документи, зображення тощо. Виконувані файли заборонені.</small>
+                    </div>
+
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="bi bi-check2-circle"></i> Створити
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <h5 class="mb-3">Існуючі матеріали (@Model.Count)</h5>
+
+        @if (Model.Count == 0)
+        {
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> Поки немає матеріалів. Створіть перший у формі ліворуч.
+            </div>
+        }
+
+        @foreach (var m in Model)
+        {
+            submittedCounts.TryGetValue(m.Id, out var subCount);
+            reviewedCounts.TryGetValue(m.Id, out var revCount);
+            bool canEdit = currentTeacherId.HasValue && m.TeacherId == currentTeacherId.Value;
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h6 class="card-title mb-1">
+                            <i class="bi @TypeIcon(m.Type) text-primary"></i>
+                            @m.Title
+                        </h6>
+                        <span class="badge bg-secondary">@TypeLabel(m.Type)</span>
+                    </div>
+                    <p class="text-muted small mb-2">
+                        <i class="bi bi-calendar"></i> @m.Date.ToString("dd.MM.yyyy")
+                        @if (m.Deadline.HasValue)
+                        {
+                            <span class="ms-2">
+                                <i class="bi bi-clock-history"></i>
+                                Дедлайн: @m.Deadline.Value.ToString("dd.MM.yyyy HH:mm")
+                            </span>
+                        }
+                        <span class="ms-2">
+                            <i class="bi bi-person"></i>
+                            @m.Teacher?.Surname @m.Teacher?.Name
+                        </span>
+                    </p>
+                    @if (!string.IsNullOrEmpty(m.Description))
+                    {
+                        <p class="card-text small">@m.Description</p>
+                    }
+
+                    @if (!string.IsNullOrEmpty(m.AttachmentPath))
+                    {
+                        <p class="mb-2">
+                            <a href="@m.AttachmentPath" download="@m.AttachmentFileName" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-download"></i> @m.AttachmentFileName
+                            </a>
+                        </p>
+                    }
+
+                    @if (m.Type == MaterialType.Homework)
+                    {
+                        <div class="mb-2">
+                            <span class="badge bg-warning text-dark me-1">
+                                ⏳ Здано: @subCount / @totalStudents
+                            </span>
+                            <span class="badge bg-success me-1">
+                                ✅ Перевірено: @revCount
+                            </span>
+                        </div>
+                    }
+
+                    <div class="d-flex gap-2">
+                        @if (m.Type == MaterialType.Homework)
+                        {
+                            <a class="btn btn-sm btn-outline-primary"
+                               asp-action="Homework" asp-route-id="@m.Id">
+                                <i class="bi bi-list-check"></i> Перевірити роботи
+                            </a>
+                        }
+                        @if (canEdit)
+                        {
+                            <form asp-action="DeleteMaterial" method="post" class="d-inline"
+                                  onsubmit="return confirm('Видалити матеріал? Усі здачі учнів будуть втрачені.')">
+                                <input type="hidden" name="id" value="@m.Id" />
+                                <button class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>

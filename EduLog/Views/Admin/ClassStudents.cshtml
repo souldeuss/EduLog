@@ -4,6 +4,10 @@
     var cls = ViewData["Class"] as EduLog.Models.Class;
     ViewData["Title"] = $"Учні — {cls?.Name}";
     var error = TempData["Error"] as string;
+    var invitationLink = TempData["InvitationLink"] as string;
+    var invitationSentTo = TempData["InvitationSentTo"] as string;
+    var pendingInvitations = ViewData["PendingInvitations"] as Dictionary<int, EduLog.Models.Invitation>
+        ?? new Dictionary<int, EduLog.Models.Invitation>();
 }
 
 <partial name="_AdminNav" />
@@ -18,6 +22,26 @@
     <div class="alert alert-danger">@error</div>
 }
 
+@if (!string.IsNullOrEmpty(invitationSentTo))
+{
+    <div class="alert alert-success">
+        <i class="bi bi-envelope-check"></i> Запрошення надіслано на <strong>@invitationSentTo</strong>.
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(invitationLink))
+{
+    <div class="alert alert-info d-flex align-items-center gap-2">
+        <i class="bi bi-link-45deg"></i>
+        <span>Посилання для реєстрації:</span>
+        <code class="flex-grow-1 text-truncate" id="invitationLinkText">@invitationLink</code>
+        <button class="btn btn-sm btn-outline-primary" type="button"
+                onclick="navigator.clipboard.writeText(document.getElementById('invitationLinkText').textContent)">
+            <i class="bi bi-clipboard"></i> Копіювати
+        </button>
+    </div>
+}
+
 <div class="mb-3 col-md-6">
     <input id="studentSearchInput" class="form-control" placeholder="Пошук за прізвищем або ім'ям" />
 </div>
@@ -29,6 +53,7 @@
             <th>Прізвище</th>
             <th>Ім'я</th>
             <th>По батькові</th>
+            <th>Акаунт</th>
             <th></th>
         </tr>
     </thead>
@@ -37,12 +62,58 @@
         @foreach (var s in Model)
         {
             var searchName = $"{s.Surname} {s.Name}".ToLowerInvariant();
+            var hasAccount = !string.IsNullOrEmpty(s.ApplicationUserId);
+            pendingInvitations.TryGetValue(s.Id, out var pendingInv);
             <tr data-student-row="@s.Id" data-search-name="@searchName">
                 <td>@(idx++)</td>
                 <td>@s.Surname</td>
                 <td>@s.Name</td>
                 <td>@s.Patronymic</td>
+                <td>
+                    @if (hasAccount)
+                    {
+                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> Активний</span>
+                    }
+                    else if (pendingInv != null)
+                    {
+                        <span class="badge bg-warning text-dark" title="@pendingInv.Email">
+                            <i class="bi bi-hourglass-split"></i> Очікує
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-secondary">Не активовано</span>
+                    }
+                </td>
                 <td class="text-end text-nowrap">
+                    @if (hasAccount)
+                    {
+                        <form asp-action="UnlinkStudentAccount" method="post" class="d-inline"
+                              onsubmit="return confirm('Видалити акаунт учня з системи? Прогрес гейміфікації збережеться.')">
+                            <input type="hidden" name="studentId" value="@s.Id" />
+                            <button class="btn btn-sm btn-outline-warning" title="Скасувати акаунт">
+                                <i class="bi bi-person-dash"></i>
+                            </button>
+                        </form>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm btn-outline-success"
+                                data-bs-toggle="collapse" data-bs-target="#invite-@s.Id"
+                                title="Додати в систему">
+                            <i class="bi bi-person-plus"></i>
+                        </button>
+                        @if (pendingInv != null)
+                        {
+                            <form asp-action="RevokeStudentInvitation" method="post" class="d-inline"
+                                  onsubmit="return confirm('Скасувати запрошення?')">
+                                <input type="hidden" name="invitationId" value="@pendingInv.Id" />
+                                <button class="btn btn-sm btn-outline-danger" title="Скасувати запрошення">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </form>
+                        }
+                    }
                     <button class="btn btn-sm btn-outline-primary"
                             data-bs-toggle="collapse" data-bs-target="#edit-@s.Id">
                         <i class="bi bi-pencil"></i>
@@ -54,8 +125,33 @@
                     </form>
                 </td>
             </tr>
+            @if (!hasAccount)
+            {
+                <tr class="collapse" id="invite-@s.Id" data-student-detail="@s.Id">
+                    <td colspan="6" class="bg-light">
+                        <form asp-action="InviteStudent" method="post" class="d-flex gap-2 align-items-end">
+                            <input type="hidden" name="studentId" value="@s.Id" />
+                            <div class="flex-grow-1">
+                                <label class="form-label form-label-sm">
+                                    Email учня (або батьків) для запрошення в систему
+                                </label>
+                                <input name="email" type="email" required
+                                       class="form-control form-control-sm"
+                                       value="@(pendingInv?.Email ?? "")"
+                                       placeholder="student@example.com" />
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-success">
+                                    <i class="bi bi-envelope"></i>
+                                    @(pendingInv != null ? "Надіслати знову" : "Надіслати запрошення")
+                                </button>
+                            </div>
+                        </form>
+                    </td>
+                </tr>
+            }
             <tr class="collapse" id="edit-@s.Id" data-student-detail="@s.Id">
-                <td colspan="5">
+                <td colspan="6">
                     <form asp-action="EditStudent" method="post" class="d-flex gap-2 align-items-end">
                         <input type="hidden" name="id" value="@s.Id" />
                         <div>
@@ -74,34 +170,6 @@
                             <button class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> Зберегти</button>
                         </div>
                     </form>
-
-<script>
-    (() => {
-        const input = document.getElementById('studentSearchInput');
-        const rows = Array.from(document.querySelectorAll('#studentsTable tbody tr[data-student-row]'));
-
-        if (!input) {
-            return;
-        }
-
-        input.addEventListener('input', () => {
-            const query = input.value.trim().toLowerCase();
-
-            rows.forEach(row => {
-                const match = !query || (row.dataset.searchName || '').includes(query);
-                const studentId = row.getAttribute('data-student-row');
-                const detailsRow = studentId
-                    ? document.querySelector(`#studentsTable tbody tr[data-student-detail='${studentId}']`)
-                    : null;
-
-                row.style.display = match ? '' : 'none';
-                if (detailsRow) {
-                    detailsRow.style.display = match ? '' : 'none';
-                }
-            });
-        });
-    })();
-</script>
                 </td>
             </tr>
         }
@@ -127,3 +195,25 @@
         <button type="submit" class="btn btn-success"><i class="bi bi-plus"></i> Додати</button>
     </div>
 </form>
+
+<script>
+    (() => {
+        const input = document.getElementById('studentSearchInput');
+        const rows = Array.from(document.querySelectorAll('#studentsTable tbody tr[data-student-row]'));
+
+        if (!input) return;
+
+        input.addEventListener('input', () => {
+            const query = input.value.trim().toLowerCase();
+            rows.forEach(row => {
+                const match = !query || (row.dataset.searchName || '').includes(query);
+                const studentId = row.getAttribute('data-student-row');
+                const detailRows = studentId
+                    ? document.querySelectorAll(`#studentsTable tbody tr[data-student-detail='${studentId}']`)
+                    : [];
+                row.style.display = match ? '' : 'none';
+                detailRows.forEach(dr => dr.style.display = match ? '' : 'none');
+            });
+        });
+    })();
+</script>

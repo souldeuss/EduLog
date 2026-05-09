@@ -1,0 +1,281 @@
+:root {
+    --student-primary: #6f42c1;
+    --student-primary-dark: #4d2d8c;
+    --student-primary-light: #b39ddb;
+    --student-gold: #ffc107;
+    --student-gold-dark: #e0a800;
+    --student-bg: #f8f5ff;
+    --student-card-shadow: 0 4px 12px rgba(111, 66, 193, 0.08);
+    --student-card-shadow-hover: 0 8px 24px rgba(111, 66, 193, 0.16);
+}
+
+.student-area {
+    min-height: calc(100vh - 60px);
+    padding: 1rem 0 3rem;
+    margin: -1rem -12px 0;
+}
+
+.student-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+/* ───── Hero / Welcome banner ───── */
+.student-hero {
+    background: linear-gradient(135deg, var(--student-primary) 0%, var(--student-primary-dark) 100%);
+    color: white;
+    border-radius: 18px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--student-card-shadow);
+    position: relative;
+    overflow: hidden;
+}
+.student-hero::before {
+    content: "";
+    position: absolute;
+    top: -40px; right: -40px;
+    width: 220px; height: 220px;
+    background: radial-gradient(circle, rgba(255,193,7,0.25) 0%, transparent 70%);
+    pointer-events: none;
+}
+.student-hero h1, .student-hero h2 { color: white; margin-bottom: 0.25rem; }
+.student-hero .lead { color: rgba(255,255,255,0.92); }
+
+.student-avatar {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--student-gold) 0%, #ff9800 100%);
+    color: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem; font-weight: bold;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border: 3px solid rgba(255,255,255,0.4);
+}
+.student-avatar-large {
+    width: 120px; height: 120px;
+    font-size: 3rem;
+}
+.student-avatar-sm {
+    width: 36px; height: 36px;
+    font-size: 0.95rem;
+    border-width: 2px;
+}
+
+.level-badge {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: rgba(255,255,255,0.2);
+    border-radius: 999px;
+    padding: 0.3rem 0.85rem;
+    font-weight: 600;
+    backdrop-filter: blur(4px);
+}
+
+.xp-bar {
+    background: rgba(0,0,0,0.25);
+    border-radius: 999px;
+    height: 14px;
+    overflow: hidden;
+    margin: 0.5rem 0 0.25rem;
+}
+.xp-bar-fill {
+    background: linear-gradient(90deg, var(--student-gold) 0%, #ff9800 100%);
+    height: 100%;
+    transition: width 0.6s ease-in-out;
+    border-radius: 999px;
+    box-shadow: 0 0 8px rgba(255,193,7,0.6);
+}
+.xp-text { font-size: 0.85rem; opacity: 0.9; }
+
+/* ───── Stat cards ───── */
+.stat-card {
+    background: white;
+    border-radius: 14px;
+    padding: 1.2rem;
+    box-shadow: var(--student-card-shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: none;
+    height: 100%;
+}
+.stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--student-card-shadow-hover);
+}
+.stat-card .stat-icon {
+    font-size: 1.8rem; margin-bottom: 0.5rem;
+}
+.stat-card .stat-value {
+    font-size: 1.6rem; font-weight: 700;
+    color: var(--student-primary-dark);
+    line-height: 1;
+}
+.stat-card .stat-label {
+    font-size: 0.85rem; color: #6c757d;
+    margin-top: 0.3rem;
+}
+
+/* ───── Tile cards (regular content) ───── */
+.tile-card {
+    background: white;
+    border-radius: 14px;
+    box-shadow: var(--student-card-shadow);
+    overflow: hidden;
+    border: none;
+}
+.tile-card .tile-header {
+    background: linear-gradient(90deg, var(--student-primary) 0%, var(--student-primary-light) 100%);
+    color: white;
+    padding: 0.75rem 1.2rem;
+    font-weight: 600;
+}
+.tile-card .tile-body { padding: 1rem 1.2rem; }
+
+/* ───── Achievements ───── */
+.achievement {
+    background: white;
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+    box-shadow: var(--student-card-shadow);
+    transition: transform 0.2s;
+}
+.achievement.locked {
+    opacity: 0.4;
+    filter: grayscale(80%);
+}
+.achievement:hover { transform: translateY(-2px); }
+.achievement .ach-icon { font-size: 2rem; }
+.achievement .ach-title {
+    font-weight: 600; color: var(--student-primary-dark);
+    margin-top: 0.4rem;
+}
+.achievement .ach-desc { font-size: 0.85rem; color: #6c757d; }
+
+/* ───── Schedule grid ───── */
+.schedule-grid {
+    display: grid;
+    grid-template-columns: 60px repeat(6, 1fr);
+    gap: 4px;
+    background: white;
+    padding: 8px;
+    border-radius: 14px;
+    box-shadow: var(--student-card-shadow);
+}
+.schedule-grid .head {
+    background: var(--student-primary);
+    color: white;
+    text-align: center;
+    padding: 0.5rem;
+    font-weight: 600;
+    border-radius: 8px;
+}
+.schedule-grid .lesson-num {
+    background: #f0e7ff;
+    color: var(--student-primary-dark);
+    text-align: center;
+    padding: 0.5rem;
+    font-weight: 600;
+    border-radius: 8px;
+}
+.schedule-grid .cell {
+    background: #fafafa;
+    border-radius: 8px;
+    padding: 0.4rem 0.5rem;
+    min-height: 70px;
+    font-size: 0.8rem;
+    transition: background 0.2s;
+    border: 1px solid transparent;
+}
+.schedule-grid .cell.empty { background: transparent; }
+.schedule-grid .cell.current {
+    background: linear-gradient(135deg, #d4edda, #c3e6cb);
+    border-color: #28a745;
+    box-shadow: 0 0 12px rgba(40,167,69,0.3);
+}
+.schedule-grid .cell.absent { border-color: #dc3545; }
+.schedule-grid .cell.absent::after {
+    content: "Н"; color: #dc3545; font-weight: bold;
+    float: right; font-size: 0.75rem;
+    background: #fff;
+    padding: 0 4px; border-radius: 3px;
+}
+.schedule-grid .cell .subj { font-weight: 600; color: var(--student-primary-dark); }
+.schedule-grid .cell .meta { color: #6c757d; font-size: 0.72rem; }
+
+/* ───── Coin animation ───── */
+@keyframes coinPop {
+    0% { transform: scale(0.6) translateY(20px); opacity: 0; }
+    50% { transform: scale(1.15) translateY(-8px); opacity: 1; }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+.coin-balance {
+    font-size: 3.5rem; font-weight: 800;
+    background: linear-gradient(135deg, var(--student-gold) 0%, #ff9800 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: coinPop 0.8s ease-out;
+}
+
+/* ───── Sidebar (Materials page) ───── */
+.subject-sidebar { padding: 0; }
+.subject-sidebar .subject-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.7rem 1rem;
+    border-radius: 10px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+    color: var(--student-primary-dark);
+    text-decoration: none;
+}
+.subject-sidebar .subject-item:hover { background: #f0e7ff; }
+.subject-sidebar .subject-item.active {
+    background: var(--student-primary); color: white; font-weight: 600;
+}
+.subject-sidebar .subject-item .pending-count {
+    background: var(--student-gold); color: var(--student-primary-dark);
+    border-radius: 999px; padding: 0 0.5rem; font-size: 0.78rem; font-weight: 700;
+}
+
+/* ───── Material card ───── */
+.material-card {
+    background: white; border-radius: 12px;
+    padding: 1rem 1.2rem; margin-bottom: 0.8rem;
+    box-shadow: var(--student-card-shadow);
+    border-left: 4px solid var(--student-primary);
+    transition: box-shadow 0.2s;
+}
+.material-card:hover { box-shadow: var(--student-card-shadow-hover); }
+.material-card.is-homework { border-left-color: var(--student-gold); }
+.material-card.is-resource { border-left-color: #17a2b8; }
+
+/* ───── Leaderboard row highlight ───── */
+.leaderboard-row.is-current {
+    background: linear-gradient(90deg, rgba(255,193,7,0.18), rgba(111,66,193,0.10));
+}
+.leaderboard-rank {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px;
+    background: var(--student-primary-light);
+    color: white; border-radius: 50%; font-weight: 700;
+}
+.leaderboard-rank.gold { background: linear-gradient(135deg, #ffd54f, #ffa000); }
+.leaderboard-rank.silver { background: linear-gradient(135deg, #e0e0e0, #9e9e9e); }
+.leaderboard-rank.bronze { background: linear-gradient(135deg, #ffab91, #d84315); }
+
+/* ───── Toast container ───── */
+.gamif-toast {
+    position: fixed; top: 90px; right: 20px;
+    background: linear-gradient(135deg, var(--student-gold), #ff9800);
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    font-weight: 600;
+    z-index: 9999;
+    animation: coinPop 0.5s ease-out;
+}

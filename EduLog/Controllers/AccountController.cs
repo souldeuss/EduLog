@@ -184,6 +184,124 @@ namespace EduLog.Controllers
             return View(model);
         }
 
+        // ===================== Student Registration (via invitation) =====================
+
+        [HttpGet]
+        public async Task<IActionResult> RegisterStudent(string? token)
+        {
+            if (string.IsNullOrEmpty(token))
+                return RedirectToAction("Login");
+
+            var invitation = await _context.Invitation
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(i =>
+                    i.Token == token
+                    && !i.IsUsed
+                    && i.ExpiresAt > DateTime.UtcNow
+                    && i.Role == "Student");
+
+            if (invitation == null || invitation.StudentId == null)
+            {
+                TempData["Error"] = "Посилання недійсне або термін дії закінчився.";
+                return RedirectToAction("Login");
+            }
+
+            var student = await _context.Student
+                .IgnoreQueryFilters()
+                .Include(s => s.Class)
+                .FirstOrDefaultAsync(s => s.Id == invitation.StudentId.Value);
+
+            if (student == null)
+            {
+                TempData["Error"] = "Учня не знайдено.";
+                return RedirectToAction("Login");
+            }
+
+            if (student.ApplicationUserId != null)
+            {
+                TempData["Error"] = "Цей учень вже зареєстрований у системі.";
+                return RedirectToAction("Login");
+            }
+
+            var school = await _context.School
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(sc => sc.Id == invitation.SchoolId);
+
+            var model = new RegisterStudentViewModel
+            {
+                Token = token,
+                Email = invitation.Email,
+                FullName = $"{student.Surname} {student.Name} {student.Patronymic}".Trim(),
+                ClassName = student.Class?.Name ?? "",
+                SchoolName = school?.Name ?? ""
+            };
+            return View(model);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> RegisterStudent(RegisterStudentViewModel model)
+        {
+            if (!ModelState.IsValid)
+                return View(model);
+
+            var invitation = await _context.Invitation
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(i =>
+                    i.Token == model.Token
+                    && !i.IsUsed
+                    && i.ExpiresAt > DateTime.UtcNow
+                    && i.Role == "Student");
+
+            if (invitation == null || invitation.StudentId == null)
+            {
+                ModelState.AddModelError(string.Empty, "Посилання недійсне або термін дії закінчився.");
+                return View(model);
+            }
+
+            var student = await _context.Student
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(s => s.Id == invitation.StudentId.Value);
+
+            if (student == null)
+            {
+                ModelState.AddModelError(string.Empty, "Учня не знайдено.");
+                return View(model);
+            }
+
+            if (student.ApplicationUserId != null)
+            {
+                ModelState.AddModelError(string.Empty, "Цей учень вже зареєстрований у системі.");
+                return View(model);
+            }
+
+            var user = new ApplicationUser
+            {
+                UserName = model.Email,
+                Email = model.Email,
+                SchoolId = invitation.SchoolId
+            };
+
+            var result = await _userManager.CreateAsync(user, model.Password);
+
+            if (result.Succeeded)
+            {
+                await _userManager.AddToRoleAsync(user, "Student");
+
+                student.ApplicationUserId = user.Id;
+                invitation.IsUsed = true;
+                await _context.SaveChangesAsync();
+
+                await _signInManager.SignInAsync(user, isPersistent: false);
+                return RedirectToAction("Dashboard", "Student");
+            }
+
+            foreach (var error in result.Errors)
+                ModelState.AddModelError(string.Empty, error.Description);
+
+            return View(model);
+        }
+
         // ===================== Login / Logout =====================
 
         [HttpGet]
@@ -207,6 +325,12 @@ namespace EduLog.Controllers
                 if (!string.IsNullOrEmpty(model.ReturnUrl) && Url.IsLocalUrl(model.ReturnUrl))
                     return Redirect(model.ReturnUrl);
 
+                // Role-based landing page
+                var loggedInUser = await _userManager.FindByEmailAsync(model.Email);
+                if (loggedInUser != null && await _userManager.IsInRoleAsync(loggedInUser, "Student"))
+                {
+                    return RedirectToAction("Dashboard", "Student");
+                }
                 return RedirectToAction("Index", "Home");
             }
 

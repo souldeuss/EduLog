@@ -33,11 +33,14 @@ namespace EduLog.Controllers
                 return NotFound();
 
             var teacher = await GetCurrentTeacherAsync();
-            List<Subject> AllSubjects = _context.Subject
-                .Where(s => s.TeacherId == teacher.Id)
-                .ToList();
 
-            // Отримуємо предмети, які прив'язані до цього класу через ClassSubject
+            // Subjects this teacher is assigned to (via M2M SubjectTeacher)
+            List<Subject> AllSubjects = teacher != null
+                ? _context.Subject
+                    .Where(s => s.SubjectTeachers.Any(st => st.TeacherId == teacher.Id))
+                    .ToList()
+                : new List<Subject>();
+
             List<Subject> ClassSubjects = _context.ClassSubject
                 .Where(cs => cs.ClassId == cls.Id)
                 .Include(cs => cs.Subject)
@@ -61,12 +64,11 @@ namespace EduLog.Controllers
             if (teacher == null)
                 return RedirectToAction("Index", "Profile");
 
-            var ListSubjects = _context.Subject
-                .Where(s => s.TeacherId == teacher.Id)
-                .ToList();
-
+            // "My classes" = classes where this teacher teaches at least one subject (via M2M)
             var classes = _context.Class
-                .Where(c => c.TeacherId == teacher.Id)
+                .Where(c => c.ClassSubjects
+                    .Any(cs => cs.Subject.SubjectTeachers
+                        .Any(st => st.TeacherId == teacher.Id)))
                 .ToList();
 
             return View(classes);
@@ -77,8 +79,11 @@ namespace EduLog.Controllers
             var teacher = await GetCurrentTeacherAsync();
             if (teacher == null)
                 return RedirectToAction("Index", "Profile");
+
             var classes = _context.Class
-                .Where(c => c.TeacherId == teacher.Id)
+                .Where(c => c.ClassSubjects
+                    .Any(cs => cs.Subject.SubjectTeachers
+                        .Any(st => st.TeacherId == teacher.Id)))
                 .ToList();
 
             return View(classes);

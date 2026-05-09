@@ -13,5 +13,8 @@ namespace EduLog.Models
 
         [ForeignKey(nameof(SchoolId))]
         public School? School { get; set; }
+
+        // Inverse navigation: Student.ApplicationUserId is the FK
+        public Student? Student { get; set; }
     }
 }

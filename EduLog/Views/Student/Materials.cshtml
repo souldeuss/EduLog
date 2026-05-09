@@ -1,0 +1,211 @@
+@model EduLog.Models.StudentArea.StudentMaterialsViewModel
+@using EduLog.Models
+
+@{
+    ViewData["Title"] = "Матеріали уроків";
+    var s = Model.Summary;
+
+    string TypeIcon(MaterialType t) => t switch
+    {
+        MaterialType.Homework => "📝",
+        MaterialType.LessonNote => "📓",
+        MaterialType.Resource => "🔗",
+        _ => "📄"
+    };
+    string TypeLabel(MaterialType t) => t switch
+    {
+        MaterialType.Homework => "Домашнє завдання",
+        MaterialType.LessonNote => "Конспект",
+        MaterialType.Resource => "Ресурс",
+        _ => t.ToString()
+    };
+    string CardClass(MaterialType t) => t switch
+    {
+        MaterialType.Homework => "is-homework",
+        MaterialType.Resource => "is-resource",
+        _ => ""
+    };
+    string StatusBadge(SubmissionStatus st) => st switch
+    {
+        SubmissionStatus.NotSubmitted => "<span class='badge bg-secondary'>❌ Не здано</span>",
+        SubmissionStatus.Submitted => "<span class='badge bg-warning text-dark'>⏳ Здано</span>",
+        SubmissionStatus.Reviewed => "<span class='badge bg-success'>✅ Перевірено</span>",
+        _ => ""
+    };
+}
+
+<link rel="stylesheet" href="~/css/student.css" asp-append-version="true" />
+
+<div class="student-area">
+    <div class="student-container">
+
+        <partial name="_StudentNav" model="@Model.Summary" />
+
+        <div class="student-hero">
+            <h2 class="mb-1"><i class="bi bi-paperclip"></i> Матеріали та домашні завдання</h2>
+            <p class="lead mb-0">@s.ClassName · @s.SchoolName</p>
+        </div>
+
+        <div class="row g-3">
+            <!-- Sidebar: subjects -->
+            <div class="col-lg-3">
+                <div class="tile-card">
+                    <div class="tile-header">📚 Предмети</div>
+                    <div class="tile-body">
+                        <div class="subject-sidebar">
+                            <a asp-action="Materials" asp-route-filter="@Model.Filter"
+                               class="subject-item @(Model.SelectedSubjectId == null ? "active" : "")">
+                                <span>Усі предмети</span>
+                            </a>
+                            @foreach (var subj in Model.Subjects)
+                            {
+                                <a asp-action="Materials"
+                                   asp-route-subjectId="@subj.Id"
+                                   asp-route-filter="@Model.Filter"
+                                   class="subject-item @(Model.SelectedSubjectId == subj.Id ? "active" : "")">
+                                    <span>@subj.Name</span>
+                                    @if (subj.PendingHomeworkCount > 0)
+                                    {
+                                        <span class="pending-count">@subj.PendingHomeworkCount</span>
+                                    }
+                                </a>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Materials list -->
+            <div class="col-lg-9">
+                <!-- Filter buttons -->
+                <div class="btn-group mb-3" role="group">
+                    <a asp-action="Materials" asp-route-subjectId="@Model.SelectedSubjectId"
+                       class="btn btn-sm @(Model.Filter == "all" ? "btn-primary" : "btn-outline-primary")">
+                        Усі
+                    </a>
+                    <a asp-action="Materials" asp-route-subjectId="@Model.SelectedSubjectId" asp-route-filter="homework"
+                       class="btn btn-sm @(Model.Filter == "homework" ? "btn-primary" : "btn-outline-primary")">
+                        📝 Домашні
+                    </a>
+                    <a asp-action="Materials" asp-route-subjectId="@Model.SelectedSubjectId" asp-route-filter="notes"
+                       class="btn btn-sm @(Model.Filter == "notes" ? "btn-primary" : "btn-outline-primary")">
+                        📓 Конспекти/Ресурси
+                    </a>
+                </div>
+
+                @if (Model.Materials.Count == 0)
+                {
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> Поки що немає матеріалів за цим фільтром.
+                    </div>
+                }
+
+                @foreach (var m in Model.Materials)
+                {
+                    bool isHw = m.Type == MaterialType.Homework;
+                    bool deadlinePassed = m.Deadline.HasValue && m.Deadline.Value < DateTime.Now;
+                    <div class="material-card @CardClass(m.Type)">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h5 class="mb-1">
+                                @TypeIcon(m.Type) @m.Title
+                            </h5>
+                            <div>
+                                <span class="badge bg-secondary me-1">@TypeLabel(m.Type)</span>
+                                @if (isHw)
+                                {
+                                    @Html.Raw(StatusBadge(m.SubmissionStatus))
+                                }
+                            </div>
+                        </div>
+
+                        <p class="text-muted small mb-2">
+                            <strong>@m.SubjectName</strong>
+                            <span class="ms-2"><i class="bi bi-person"></i> @m.TeacherName</span>
+                            <span class="ms-2"><i class="bi bi-calendar"></i> @m.Date.ToString("dd.MM.yyyy")</span>
+                            @if (m.Deadline.HasValue)
+                            {
+                                <span class="ms-2 @(deadlinePassed ? "text-danger fw-bold" : "")">
+                                    <i class="bi bi-clock-history"></i>
+                                    Дедлайн: @m.Deadline.Value.ToString("dd.MM.yyyy HH:mm")
+                                </span>
+                            }
+                        </p>
+
+                        @if (!string.IsNullOrEmpty(m.Description))
+                        {
+                            <p>@m.Description</p>
+                        }
+
+                        @if (!string.IsNullOrEmpty(m.AttachmentPath))
+                        {
+                            <p>
+                                <a href="@m.AttachmentPath" download="@m.AttachmentFileName"
+                                   class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-download"></i> @m.AttachmentFileName
+                                </a>
+                            </p>
+                        }
+
+                        @if (isHw)
+                        {
+                            @if (m.SubmissionStatus == SubmissionStatus.Reviewed)
+                            {
+                                <div class="alert alert-success mt-2 mb-2">
+                                    <strong>Перевірено</strong>
+                                    @if (m.ReviewScore.HasValue)
+                                    {
+                                        <span class="badge bg-success ms-2" style="font-size: 1rem;">@m.ReviewScore / 100</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(m.TeacherComment))
+                                    {
+                                        <div class="mt-2"><i class="bi bi-chat-dots"></i> @m.TeacherComment</div>
+                                    }
+                                </div>
+                            }
+
+                            @if (m.SubmissionStatus != SubmissionStatus.Reviewed)
+                            {
+                                <button class="btn btn-sm btn-warning mt-2"
+                                        type="button" data-bs-toggle="collapse"
+                                        data-bs-target="#submit-@m.Id">
+                                    <i class="bi bi-upload"></i>
+                                    @(m.SubmissionStatus == SubmissionStatus.Submitted ? "Оновити роботу" : "Здати ДЗ")
+                                </button>
+                                <div class="collapse mt-2 @(TempData[$"OpenSubmit-{m.Id}"] != null ? "show" : "")"
+                                     id="submit-@m.Id">
+                                    <form asp-action="SubmitHomework" method="post" enctype="multipart/form-data">
+                                        <input type="hidden" name="lessonMaterialId" value="@m.Id" />
+                                        <div class="mb-2">
+                                            <label class="form-label small">Відповідь (текст)</label>
+                                            <textarea name="textAnswer" class="form-control" rows="3"
+                                                      placeholder="Напишіть відповідь або залиште порожнім, якщо файл містить усе">@m.SubmissionTextAnswer</textarea>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label small">
+                                                <i class="bi bi-paperclip"></i> Файл (опціонально, до 25 МБ)
+                                            </label>
+                                            <input name="attachment" type="file" class="form-control form-control-sm" />
+                                            @if (!string.IsNullOrEmpty(m.SubmissionAttachmentPath))
+                                            {
+                                                <small class="text-muted d-block mt-1">
+                                                    Поточний файл:
+                                                    <a href="@m.SubmissionAttachmentPath" download="@m.SubmissionAttachmentFileName">
+                                                        @m.SubmissionAttachmentFileName
+                                                    </a>
+                                                    (новий файл замінить його)
+                                                </small>
+                                            }
+                                        </div>
+                                        <button type="submit" class="btn btn-success btn-sm">
+                                            <i class="bi bi-send"></i> Надіслати
+                                        </button>
+                                    </form>
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>

@@ -4,6 +4,7 @@ using EduLog.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EduLog.Migrations
 {
     [DbContext(typeof(EduLogContext))]
-    partial class EduLogContextModelSnapshot : ModelSnapshot
+    [Migration("20260509165614_ExtendInvitationForStudents")]
+    partial class ExtendInvitationForStudents
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -295,12 +298,6 @@ namespace EduLog.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("AttachmentFileName")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("AttachmentPath")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<int>("LessonMaterialId")
                         .HasColumnType("int");
 
@@ -386,12 +383,6 @@ namespace EduLog.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AttachmentFileName")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("AttachmentPath")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("ClassSubjectClassId")
                         .HasColumnType("int");

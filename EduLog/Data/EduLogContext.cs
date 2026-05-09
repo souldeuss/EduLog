@@ -31,6 +31,9 @@ namespace EduLog.Data
         public DbSet<AcademicYear> AcademicYear { get; set; }
         public DbSet<ScheduleSlot> ScheduleSlot { get; set; }
         public DbSet<SchoolEvent> SchoolEvent { get; set; }
+        public DbSet<LessonMaterial> LessonMaterial { get; set; }
+        public DbSet<HomeworkSubmission> HomeworkSubmission { get; set; }
+        public DbSet<CoinTransaction> CoinTransaction { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -91,7 +94,7 @@ namespace EduLog.Data
                 .HasForeignKey(c => c.RoomId)
                 .OnDelete(DeleteBehavior.SetNull);
 
-            // ScheduleSlot FK — restrict delete to avoid cascade cycles
+            // ScheduleSlot FK ï¿½ restrict delete to avoid cascade cycles
             modelBuilder.Entity<ScheduleSlot>()
                 .HasOne(s => s.Class).WithMany().HasForeignKey(s => s.ClassId).OnDelete(DeleteBehavior.Restrict);
             modelBuilder.Entity<ScheduleSlot>()
@@ -100,6 +103,57 @@ namespace EduLog.Data
                 .HasOne(s => s.Teacher).WithMany().HasForeignKey(s => s.TeacherId).OnDelete(DeleteBehavior.Restrict);
             modelBuilder.Entity<ScheduleSlot>()
                 .HasOne(s => s.AcademicYear).WithMany().HasForeignKey(s => s.AcademicYearId).OnDelete(DeleteBehavior.Restrict);
+
+            // Student <-> ApplicationUser one-to-one (FK on Student)
+            modelBuilder.Entity<Student>()
+                .HasOne(s => s.ApplicationUser)
+                .WithOne(u => u.Student)
+                .HasForeignKey<Student>(s => s.ApplicationUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // LessonMaterial -> ClassSubject (composite FK)
+            modelBuilder.Entity<LessonMaterial>()
+                .HasOne(lm => lm.ClassSubject)
+                .WithMany()
+                .HasForeignKey(lm => new { lm.ClassSubjectClassId, lm.ClassSubjectSubjectId })
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<LessonMaterial>()
+                .HasOne(lm => lm.Teacher)
+                .WithMany()
+                .HasForeignKey(lm => lm.TeacherId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // HomeworkSubmission relationships
+            modelBuilder.Entity<HomeworkSubmission>()
+                .HasOne(hs => hs.LessonMaterial)
+                .WithMany(lm => lm.Submissions)
+                .HasForeignKey(hs => hs.LessonMaterialId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<HomeworkSubmission>()
+                .HasOne(hs => hs.Student)
+                .WithMany(s => s.HomeworkSubmissions)
+                .HasForeignKey(hs => hs.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<HomeworkSubmission>()
+                .HasIndex(hs => new { hs.LessonMaterialId, hs.StudentId })
+                .IsUnique();
+
+            // Invitation -> Student (optional, for student invitations)
+            modelBuilder.Entity<Invitation>()
+                .HasOne(i => i.Student)
+                .WithMany()
+                .HasForeignKey(i => i.StudentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // CoinTransaction relationship
+            modelBuilder.Entity<CoinTransaction>()
+                .HasOne(ct => ct.Student)
+                .WithMany(s => s.CoinTransactions)
+                .HasForeignKey(ct => ct.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Global query filters
             modelBuilder.Entity<Teacher>().HasQueryFilter(e =>
@@ -129,6 +183,12 @@ namespace EduLog.Data
             modelBuilder.Entity<ScheduleSlot>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
             modelBuilder.Entity<SchoolEvent>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<LessonMaterial>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<HomeworkSubmission>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<CoinTransaction>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
         }
 

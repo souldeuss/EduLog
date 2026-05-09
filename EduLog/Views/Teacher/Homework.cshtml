@@ -1,0 +1,148 @@
+@model List<EduLog.Models.Student>
+@using EduLog.Models
+
+@{
+    var material = ViewData["Material"] as LessonMaterial;
+    var submissions = ViewData["Submissions"] as Dictionary<int, HomeworkSubmission> ?? new();
+
+    ViewData["Title"] = $"Перевірка ДЗ: {material?.Title}";
+
+    string StatusBadge(SubmissionStatus s) => s switch
+    {
+        SubmissionStatus.NotSubmitted => "<span class='badge bg-secondary'>❌ Не здано</span>",
+        SubmissionStatus.Submitted => "<span class='badge bg-warning text-dark'>⏳ Здано</span>",
+        SubmissionStatus.Reviewed => "<span class='badge bg-success'>✅ Перевірено</span>",
+        _ => ""
+    };
+
+    int totalSubmitted = submissions.Count(kv => kv.Value.Status != SubmissionStatus.NotSubmitted);
+    int totalReviewed = submissions.Count(kv => kv.Value.Status == SubmissionStatus.Reviewed);
+}
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <a asp-action="Materials"
+       asp-route-classId="@material?.ClassSubjectClassId"
+       asp-route-subjectId="@material?.ClassSubjectSubjectId"
+       class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> До матеріалів
+    </a>
+    <h3 class="mb-0">
+        <i class="bi bi-list-check"></i>
+        Перевірка: @material?.Title
+    </h3>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">@material?.Title</h5>
+        <p class="text-muted small mb-1">
+            <i class="bi bi-people"></i>
+            @material?.ClassSubject?.Class?.Name
+            <i class="bi bi-book ms-2"></i>
+            @material?.ClassSubject?.Subject?.Name
+            <i class="bi bi-calendar ms-2"></i>
+            @material?.Date.ToString("dd.MM.yyyy")
+            @if (material?.Deadline != null)
+            {
+                <span class="ms-2 text-warning">
+                    <i class="bi bi-clock-history"></i>
+                    Дедлайн: @material.Deadline.Value.ToString("dd.MM.yyyy HH:mm")
+                </span>
+            }
+        </p>
+        @if (!string.IsNullOrEmpty(material?.Description))
+        {
+            <p class="card-text">@material.Description</p>
+        }
+        <div class="mt-2">
+            <span class="badge bg-warning text-dark me-1">
+                Здали: @totalSubmitted / @Model.Count
+            </span>
+            <span class="badge bg-success">
+                Перевірено: @totalReviewed
+            </span>
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>#</th>
+                <th>Учень</th>
+                <th>Статус</th>
+                <th>Дата здачі</th>
+                <th>Відповідь</th>
+                <th>Оцінка / Коментар</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @{ int idx = 1; }
+            @foreach (var student in Model)
+            {
+                submissions.TryGetValue(student.Id, out var sub);
+                var status = sub?.Status ?? SubmissionStatus.NotSubmitted;
+                <tr>
+                    <td>@(idx++)</td>
+                    <td><strong>@student.Surname @student.Name</strong></td>
+                    <td>@Html.Raw(StatusBadge(status))</td>
+                    <td>
+                        @if (sub?.SubmittedAt != null)
+                        {
+                            @sub.SubmittedAt.Value.ToString("dd.MM.yyyy HH:mm")
+                        }
+                        else
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                    </td>
+                    <td style="max-width: 300px;">
+                        @if (!string.IsNullOrEmpty(sub?.TextAnswer))
+                        {
+                            <details>
+                                <summary class="text-primary" style="cursor: pointer;">Переглянути текст</summary>
+                                <pre class="mt-2 small bg-light p-2 rounded" style="white-space: pre-wrap;">@sub.TextAnswer</pre>
+                            </details>
+                        }
+                        @if (!string.IsNullOrEmpty(sub?.AttachmentPath))
+                        {
+                            <a href="@sub.AttachmentPath" download="@sub.AttachmentFileName" class="btn btn-sm btn-outline-secondary mt-1">
+                                <i class="bi bi-download"></i> @sub.AttachmentFileName
+                            </a>
+                        }
+                        @if (string.IsNullOrEmpty(sub?.TextAnswer) && string.IsNullOrEmpty(sub?.AttachmentPath))
+                        {
+                            <span class="text-muted small">—</span>
+                        }
+                    </td>
+                    <td>
+                        @if (sub != null && status != SubmissionStatus.NotSubmitted)
+                        {
+                            <form asp-action="ReviewSubmission" method="post" class="d-flex gap-2 align-items-center">
+                                <input type="hidden" name="submissionId" value="@sub.Id" />
+                                <input name="score" type="number" min="0" max="100"
+                                       value="@(sub.ReviewScore?.ToString() ?? "")"
+                                       class="form-control form-control-sm" style="width: 80px;"
+                                       placeholder="0-100" />
+                                <input name="comment" type="text"
+                                       value="@(sub.TeacherComment ?? "")"
+                                       class="form-control form-control-sm"
+                                       placeholder="Коментар" style="width: 250px;" />
+                                <button class="btn btn-sm btn-success" title="Зберегти">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                            </form>
+                        }
+                        else
+                        {
+                            <span class="text-muted small">Очікує здачі</span>
+                        }
+                    </td>
+                    <td></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
