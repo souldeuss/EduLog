@@ -71,6 +71,7 @@ namespace EduLog.Controllers
                 Id = student.Id,
                 FullName = fullName,
                 Initials = initials.Trim().ToUpperInvariant(),
+                AvatarPath = student.AvatarPath,
                 ClassName = student.Class?.Name ?? "",
                 SchoolName = school?.Name ?? "",
                 Level = student.Level,
@@ -232,11 +233,16 @@ namespace EduLog.Controllers
                         && s.DayOfWeek >= 1 && s.DayOfWeek <= 6)
                     .ToListAsync();
 
+            // Load absences for the week, keyed by (date, subjectId) so we can mark
+            // only the specific lesson cell — not the whole day.
             var weekAbsences = await _context.Absence
                 .Where(a => a.StudentId == student.Id
                     && a.Date >= monday && a.Date < saturday.AddDays(1))
-                .Select(a => a.Date.Date)
+                .Select(a => new { a.Date, a.SubjectId })
                 .ToListAsync();
+
+            var absenceSet = new HashSet<(DateTime Date, int SubjectId)>(
+                weekAbsences.Select(a => (a.Date.Date, a.SubjectId)));
 
             var nowDow = IsoDayOfWeek(DateTime.Now.DayOfWeek);
             var nowTime = DateTime.Now.TimeOfDay;
@@ -250,7 +256,7 @@ namespace EduLog.Controllers
                 var (start, end) = LessonTimeRange(s.LessonNumber);
                 bool isCurrent = isThisWeek && s.DayOfWeek == nowDow && nowTime >= start && nowTime <= end;
                 var dayDate = monday.AddDays(s.DayOfWeek - 1);
-                bool absence = weekAbsences.Contains(dayDate);
+                bool hasAbsence = absenceSet.Contains((dayDate, s.SubjectId));
 
                 cells[(s.DayOfWeek, s.LessonNumber)] = new WeekScheduleCell
                 {
@@ -258,7 +264,7 @@ namespace EduLog.Controllers
                     TeacherName = $"{s.Teacher.Surname} {s.Teacher.Name}".Trim(),
                     Room = s.Room,
                     IsCurrent = isCurrent,
-                    HasAbsenceThisWeek = absence
+                    HasAbsenceThisLesson = hasAbsence
                 };
             }
 
@@ -471,9 +477,6 @@ namespace EduLog.Controllers
             // Attendance % for current academic year using ScheduleSlot to estimate expected lessons
             int attendancePercent = await ComputeAttendancePercentAsync(student);
 
-            // Achievements
-            var achievements = ComputeAchievements(student, submittedHwCount);
-
             // Grade chart: last 30 days, grouped by subject
             var since = DateTime.UtcNow.Date.AddDays(-30);
             var grades = await (from g in _context.Grade
@@ -506,7 +509,6 @@ namespace EduLog.Controllers
                 HomeworkAssignedCount = assignedHwCount,
                 HomeworkPercent = hwPercent,
                 AttendancePercent = attendancePercent,
-                Achievements = achievements,
                 ChartLabels = dateLabels,
                 ChartSeries = chartSeries
             };
@@ -582,45 +584,152 @@ namespace EduLog.Controllers
             };
         }
 
-        // ───────── Classmates ─────────
+        // ───────── Avatar ─────────
 
-        public async Task<IActionResult> Classmates()
+        private static readonly HashSet<string> _allowedAvatarExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".png", ".jpg", ".jpeg", ".gif", ".webp"
+        };
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> UploadAvatar(IFormFile? avatar, CancellationToken cancellationToken)
+        {
+            var student = await GetCurrentStudentAsync();
+            if (student == null) return RedirectToAction("Login", "Account");
+
+            if (avatar == null || avatar.Length == 0)
+            {
+                TempData["Error"] = "Оберіть файл зображення.";
+                return RedirectToAction(nameof(Profile));
+            }
+
+            var ext = Path.GetExtension(avatar.FileName);
+            if (!_allowedAvatarExtensions.Contains(ext))
+            {
+                TempData["Error"] = "Дозволені формати: PNG, JPG, GIF, WebP.";
+                return RedirectToAction(nameof(Profile));
+            }
+
+            try
+            {
+                var stored = await _fileStorage.SaveAsync(avatar, "avatars", cancellationToken);
+                if (stored == null)
+                {
+                    TempData["Error"] = "Не вдалося зберегти файл.";
+                    return RedirectToAction(nameof(Profile));
+                }
+
+                // Cleanup previous avatar
+                _fileStorage.Delete(student.AvatarPath);
+
+                student.AvatarPath = stored.RelativePath;
+                await _context.SaveChangesAsync(cancellationToken);
+
+                TempData["Success"] = "Аватар оновлено.";
+            }
+            catch (InvalidOperationException ex)
+            {
+                TempData["Error"] = ex.Message;
+            }
+
+            return RedirectToAction(nameof(Profile));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteAvatar(CancellationToken cancellationToken)
+        {
+            var student = await GetCurrentStudentAsync();
+            if (student == null) return RedirectToAction("Login", "Account");
+
+            if (!string.IsNullOrEmpty(student.AvatarPath))
+            {
+                _fileStorage.Delete(student.AvatarPath);
+                student.AvatarPath = null;
+                await _context.SaveChangesAsync(cancellationToken);
+                TempData["Success"] = "Аватар видалено.";
+            }
+
+            return RedirectToAction(nameof(Profile));
+        }
+
+        // ───────── Achievements + per-subject grade summary ─────────
+
+        public async Task<IActionResult> Achievements()
         {
             var student = await GetCurrentStudentAsync();
             if (student == null) return RedirectToAction("Login", "Account");
 
             var summary = await BuildSummaryAsync(student);
 
-            var classmates = await _context.Student
-                .Where(s => s.ClassId == student.ClassId)
-                .OrderBy(s => s.Surname).ThenBy(s => s.Name)
-                .ToListAsync();
+            var submittedHwCount = await _context.HomeworkSubmission
+                .CountAsync(hs => hs.StudentId == student.Id && hs.Status != SubmissionStatus.NotSubmitted);
 
-            var rows = new List<ClassmateRow>();
-            foreach (var c in classmates)
-            {
-                var avg = await _gamification.GetGradeAverageAsync(c.Id);
-                var levelInfo = _gamification.GetLevelInfo(c.Level);
-                var initials = $"{(c.Surname.Length > 0 ? c.Surname[0] : ' ')}" +
-                               $"{(c.Name.Length > 0 ? c.Name[0] : ' ')}";
-                rows.Add(new ClassmateRow
+            var achievements = ComputeAchievements(student, submittedHwCount);
+
+            // Per-subject grade summary
+            var grades = await (from g in _context.Grade
+                                join s in _context.Subject on g.SubjectId equals s.Id
+                                where g.StudentId == student.Id
+                                orderby g.Date descending, g.Id descending
+                                select new { SubjectId = s.Id, SubjectName = s.Name, g.Value, g.Date })
+                                .ToListAsync();
+
+            var subjectRows = grades
+                .GroupBy(x => new { x.SubjectId, x.SubjectName })
+                .Select(g =>
                 {
-                    Id = c.Id,
-                    FullName = $"{c.Surname} {c.Name}".Trim(),
-                    Initials = initials.Trim().ToUpperInvariant(),
-                    Level = c.Level,
-                    LevelTitle = levelInfo.Title,
-                    EduCoins = c.EduCoins,
-                    AttendanceStreak = c.AttendanceStreak,
-                    GradeAverage = avg,
-                    IsCurrent = c.Id == student.Id
-                });
-            }
+                    var ordered = g.OrderByDescending(x => x.Date).ToList();
+                    var recent = ordered.Take(5).Select(x => x.Value).ToList();
+                    var avg = g.Average(x => (double)x.Value);
 
-            // Default sort: EduCoins desc
-            rows = rows.OrderByDescending(r => r.EduCoins).ThenByDescending(r => r.Level).ToList();
+                    int trend = 0;
+                    if (recent.Count >= 2)
+                    {
+                        // Compare avg of newest half vs oldest half of recent grades
+                        int half = recent.Count / 2;
+                        if (half > 0)
+                        {
+                            var newest = recent.Take(recent.Count - half).Average();
+                            var oldest = recent.Skip(recent.Count - half).Average();
+                            if (newest - oldest >= 0.5) trend = 1;
+                            else if (oldest - newest >= 0.5) trend = -1;
+                        }
+                    }
 
-            var vm = new StudentClassmatesViewModel { Summary = summary, Rows = rows };
+                    string status = avg switch
+                    {
+                        >= 10.0 => "✨ Ідеальний",
+                        >= 8.0 => "🌟 Чудовий",
+                        >= 6.0 => "👍 Добрий",
+                        >= 4.0 => "📚 Непогано",
+                        _ => "💪 Намагається"
+                    };
+
+                    return new SubjectGradesRow
+                    {
+                        SubjectId = g.Key.SubjectId,
+                        SubjectName = g.Key.SubjectName,
+                        GradeCount = g.Count(),
+                        Average = avg,
+                        LastGrade = ordered[0].Value,
+                        LastGradeDate = ordered[0].Date,
+                        Trend = trend,
+                        RecentGrades = recent,
+                        Status = status
+                    };
+                })
+                .OrderByDescending(r => r.Average)
+                .ToList();
+
+            var vm = new StudentAchievementsViewModel
+            {
+                Summary = summary,
+                Achievements = achievements,
+                UnlockedCount = achievements.Count(a => a.Unlocked),
+                SubjectGrades = subjectRows
+            };
             return View(vm);
         }
 

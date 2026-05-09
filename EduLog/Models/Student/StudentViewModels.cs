@@ -3,11 +3,19 @@ using EduLog.Services;
 
 namespace EduLog.Models.StudentArea
 {
+    public class AvatarVm
+    {
+        public string? AvatarPath { get; set; }
+        public string Initials { get; set; } = "";
+        public string SizeClass { get; set; } = "";
+    }
+
     public class StudentSummary
     {
         public int Id { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string Initials { get; set; } = string.Empty;
+        public string? AvatarPath { get; set; }
         public string ClassName { get; set; } = string.Empty;
         public string SchoolName { get; set; } = string.Empty;
 
@@ -79,7 +87,6 @@ namespace EduLog.Models.StudentArea
         public int HomeworkAssignedCount { get; set; }
         public int HomeworkPercent { get; set; }
         public int AttendancePercent { get; set; }
-        public List<AchievementItem> Achievements { get; set; } = new();
 
         // Grade history grouped by subject for the chart (last 30 days)
         public List<string> ChartLabels { get; set; } = new(); // dates as ISO strings
@@ -92,7 +99,9 @@ namespace EduLog.Models.StudentArea
         public string TeacherName { get; set; } = string.Empty;
         public string? Room { get; set; }
         public bool IsCurrent { get; set; }
-        public bool HasAbsenceThisWeek { get; set; }
+        // True only when this specific (date, subject) lesson had an absence,
+        // not when any other lesson on the same day was missed.
+        public bool HasAbsenceThisLesson { get; set; }
     }
 
     public class StudentScheduleViewModel
@@ -148,23 +157,26 @@ namespace EduLog.Models.StudentArea
         public List<MaterialItem> Materials { get; set; } = new();
     }
 
-    public class ClassmateRow
+    public class SubjectGradesRow
     {
-        public int Id { get; set; }
-        public string FullName { get; set; } = string.Empty;
-        public string Initials { get; set; } = string.Empty;
-        public int Level { get; set; }
-        public string LevelTitle { get; set; } = string.Empty;
-        public int EduCoins { get; set; }
-        public int AttendanceStreak { get; set; }
-        public double GradeAverage { get; set; }
-        public bool IsCurrent { get; set; }
+        public int SubjectId { get; set; }
+        public string SubjectName { get; set; } = string.Empty;
+        public int GradeCount { get; set; }
+        public double Average { get; set; }
+        public int? LastGrade { get; set; }
+        public DateTime? LastGradeDate { get; set; }
+        // Direction of trend in last 5 grades: -1 down, 0 flat, +1 up
+        public int Trend { get; set; }
+        public List<int> RecentGrades { get; set; } = new();
+        public string Status { get; set; } = string.Empty; // emoji status
     }
 
-    public class StudentClassmatesViewModel
+    public class StudentAchievementsViewModel
     {
         public StudentSummary Summary { get; set; } = new();
-        public List<ClassmateRow> Rows { get; set; } = new();
+        public List<AchievementItem> Achievements { get; set; } = new();
+        public int UnlockedCount { get; set; }
+        public List<SubjectGradesRow> SubjectGrades { get; set; } = new();
     }
 
     public class StudentCoinsViewModel

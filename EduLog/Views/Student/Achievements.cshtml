@@ -1,0 +1,134 @@
+@model EduLog.Models.StudentArea.StudentAchievementsViewModel
+
+@{
+    ViewData["Title"] = "Мої досягнення";
+    var s = Model.Summary;
+
+    string TrendIcon(int t) => t switch
+    {
+        > 0 => "<span class='text-success'><i class='bi bi-arrow-up-right'></i> росте</span>",
+        < 0 => "<span class='text-danger'><i class='bi bi-arrow-down-right'></i> падає</span>",
+        _ => "<span class='text-muted'><i class='bi bi-dash'></i> стабільно</span>"
+    };
+
+    string GradeBadge(int v)
+    {
+        var cls = v >= 10 ? "bg-success"
+                : v >= 7 ? "bg-primary"
+                : v >= 4 ? "bg-warning text-dark"
+                : "bg-danger";
+        return $"<span class='badge {cls}'>{v}</span>";
+    }
+}
+
+<link rel="stylesheet" href="~/css/student.css" asp-append-version="true" />
+
+<div class="student-area">
+    <div class="student-container">
+
+        <partial name="_StudentNav" model="@Model.Summary" />
+
+        <div class="student-hero">
+            <div class="row align-items-center">
+                <div class="col-md-auto text-center">
+                    <partial name="_Avatar" model="@(new EduLog.Models.StudentArea.AvatarVm { AvatarPath = s.AvatarPath, Initials = s.Initials, SizeClass = "student-avatar-large" })" />
+                </div>
+                <div class="col">
+                    <h2 class="mb-1">🏅 Мої досягнення</h2>
+                    <p class="lead mb-0">
+                        Відкрито @Model.UnlockedCount з @Model.Achievements.Count досягнень
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ───── Achievements Grid ───── -->
+        <h4 class="mt-3 mb-3 text-secondary">🏅 Досягнення</h4>
+        <div class="row g-3 mb-4">
+            @foreach (var a in Model.Achievements)
+            {
+                <div class="col-md-3 col-6">
+                    <div class="achievement @(a.Unlocked ? "" : "locked")">
+                        <div class="ach-icon">@a.Icon</div>
+                        <div class="ach-title">@a.Title</div>
+                        <div class="ach-desc">@a.Description</div>
+                        @if (a.Unlocked)
+                        {
+                            <div class="text-success small mt-1">
+                                <i class="bi bi-check-circle-fill"></i> Відкрито
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-muted small mt-1">
+                                <i class="bi bi-lock-fill"></i> Заблоковано
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- ───── Per-subject grade summary ───── -->
+        <h4 class="mt-4 mb-3 text-secondary">📚 Оцінки по предметах</h4>
+
+        @if (Model.SubjectGrades.Count == 0)
+        {
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> Поки що немає оцінок. З'являться після того, як учитель почне виставляти оцінки.
+            </div>
+        }
+        else
+        {
+            <div class="tile-card">
+                <div class="tile-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Предмет</th>
+                                    <th class="text-center">Сер. бал</th>
+                                    <th class="text-center">Статус</th>
+                                    <th class="text-center">Оцінок</th>
+                                    <th class="text-center">Остання</th>
+                                    <th class="text-center">Динаміка</th>
+                                    <th>Останні 5</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in Model.SubjectGrades)
+                                {
+                                    <tr>
+                                        <td><strong>@row.SubjectName</strong></td>
+                                        <td class="text-center">
+                                            <span class="fw-bold" style="font-size: 1.1rem;">
+                                                @row.Average.ToString("0.00")
+                                            </span>
+                                        </td>
+                                        <td class="text-center">@row.Status</td>
+                                        <td class="text-center">@row.GradeCount</td>
+                                        <td class="text-center">
+                                            @if (row.LastGrade.HasValue)
+                                            {
+                                                @Html.Raw(GradeBadge(row.LastGrade.Value))
+                                                <br />
+                                                <small class="text-muted">@row.LastGradeDate?.ToString("dd.MM")</small>
+                                            }
+                                        </td>
+                                        <td class="text-center">@Html.Raw(TrendIcon(row.Trend))</td>
+                                        <td>
+                                            @foreach (var v in row.RecentGrades)
+                                            {
+                                                @Html.Raw(GradeBadge(v) + " ")
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>

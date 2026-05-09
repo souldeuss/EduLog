@@ -15,6 +15,18 @@ namespace EduLog.Controllers
 
         public IActionResult Index()
         {
+            // Authenticated users land on their role-specific dashboard,
+            // not the marketing/landing page.
+            if (User.Identity?.IsAuthenticated == true)
+            {
+                if (User.IsInRole("Student"))
+                    return RedirectToAction("Dashboard", "Student");
+                if (User.IsInRole("Admin"))
+                    return RedirectToAction("Index", "Admin");
+                if (User.IsInRole("Teacher"))
+                    return RedirectToAction("spreader", "Journal");
+            }
+
             return View();
         }
 

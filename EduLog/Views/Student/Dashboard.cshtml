@@ -17,7 +17,7 @@
         <div class="student-hero">
             <div class="row align-items-center">
                 <div class="col-md-auto text-center">
-                    <div class="student-avatar">@s.Initials</div>
+                    <partial name="_Avatar" model="@(new EduLog.Models.StudentArea.AvatarVm { AvatarPath = s.AvatarPath, Initials = s.Initials })" />
                 </div>
                 <div class="col">
                     <h2 class="mb-1">Привіт, @s.FullName.Split(' ').LastOrDefault()! 👋</h2>

@@ -47,7 +47,9 @@ namespace EduLog.Controllers
             var teacher = await GetCurrentTeacherAsync();
             if (teacher == null)
             {
-                return RedirectToAction("Index", "Profile");
+                ViewData["NoTeacherLinked"] = true;
+                ViewData["ScheduleSlots"] = new List<TeacherScheduleSlotView>();
+                return View();
             }
 
             var currentYear = await _context.AcademicYear

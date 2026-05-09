@@ -22,6 +22,9 @@ namespace EduLog.Models
         [ForeignKey(nameof(ApplicationUserId))]
         public ApplicationUser? ApplicationUser { get; set; }
 
+        // Avatar (relative path under wwwroot, e.g. "/uploads/avatars/abc.png")
+        public string? AvatarPath { get; set; }
+
         // Gamification
         public int EduCoins { get; set; } = 0;
         public int AttendanceStreak { get; set; } = 0;

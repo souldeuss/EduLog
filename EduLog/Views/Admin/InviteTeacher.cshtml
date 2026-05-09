@@ -4,11 +4,12 @@
     ViewData["Title"] = "Запросити вчителя";
     var invitations = ViewData["Invitations"] as List<EduLog.Models.Invitation> ?? new List<EduLog.Models.Invitation>();
     var sentTo = TempData["InvitationSentTo"] as string;
+    var invitationLink = TempData["InvitationLink"] as string;
     var error = TempData["Error"] as string;
 }
 
 <div class="row justify-content-center">
-    <div class="col-md-8">
+    <div class="col-md-10">
         <partial name="_AdminNav" />
 
         <h2 class="mb-4">Запросити вчителя</h2>
@@ -20,7 +21,20 @@
 
         @if (!string.IsNullOrWhiteSpace(sentTo))
         {
-            <div class="alert alert-success">Запрошення надіслано на @sentTo</div>
+            <div class="alert alert-success">Запрошення надіслано на <strong>@sentTo</strong></div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(invitationLink))
+        {
+            <div class="alert alert-info d-flex align-items-center gap-2 flex-wrap">
+                <i class="bi bi-link-45deg fs-5"></i>
+                <span class="me-1">Посилання для реєстрації:</span>
+                <code class="flex-grow-1 text-truncate" id="teacherInvitationLink">@invitationLink</code>
+                <button class="btn btn-sm btn-outline-primary" type="button"
+                        onclick="navigator.clipboard.writeText(document.getElementById('teacherInvitationLink').textContent).then(() => { this.innerHTML = '<i class=\'bi bi-check\'></i> Скопійовано'; setTimeout(() => { this.innerHTML = '<i class=\'bi bi-clipboard\'></i> Копіювати'; }, 2000); })">
+                    <i class="bi bi-clipboard"></i> Копіювати
+                </button>
+            </div>
         }
 
         <form asp-action="InviteTeacher" method="post" class="mb-4">
@@ -33,40 +47,64 @@
         </form>
 
         <h4 class="mt-4">Запрошення</h4>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Email</th>
-                    <th>Створено</th>
-                    <th>Дійсне до</th>
-                    <th>Статус</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var inv in invitations)
-                {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
                     <tr>
-                        <td>@inv.Email</td>
-                        <td>@inv.CreatedAt.ToString("dd.MM.yyyy HH:mm")</td>
-                        <td>@inv.ExpiresAt.ToString("dd.MM.yyyy HH:mm")</td>
-                        <td>
-                            @if (inv.IsUsed)
-                            {
-                                <span class="badge bg-success">Використано</span>
-                            }
-                            else if (inv.ExpiresAt < DateTime.UtcNow)
-                            {
-                                <span class="badge bg-secondary">Прострочено</span>
-                            }
-                            else
-                            {
-                                <span class="badge bg-warning text-dark">Очікує</span>
-                            }
-                        </td>
+                        <th>Email</th>
+                        <th>Створено</th>
+                        <th>Дійсне до</th>
+                        <th>Статус</th>
+                        <th>Посилання</th>
                     </tr>
-                }
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    @foreach (var inv in invitations)
+                    {
+                        var isPending = !inv.IsUsed && inv.ExpiresAt >= DateTime.UtcNow;
+                        var rowLink = isPending
+                            ? Url.Action("RegisterTeacher", "Account", new { token = inv.Token }, Context.Request.Scheme)
+                            : null;
+                        <tr>
+                            <td>@inv.Email</td>
+                            <td>@inv.CreatedAt.ToString("dd.MM.yyyy HH:mm")</td>
+                            <td>@inv.ExpiresAt.ToString("dd.MM.yyyy HH:mm")</td>
+                            <td>
+                                @if (inv.IsUsed)
+                                {
+                                    <span class="badge bg-success">Використано</span>
+                                }
+                                else if (inv.ExpiresAt < DateTime.UtcNow)
+                                {
+                                    <span class="badge bg-secondary">Прострочено</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-warning text-dark">Очікує</span>
+                                }
+                            </td>
+                            <td>
+                                @if (isPending && rowLink != null)
+                                {
+                                    var linkId = $"lnk-{inv.Id}";
+                                    <span class="d-flex align-items-center gap-1">
+                                        <code class="text-truncate" style="max-width:220px" id="@linkId">@rowLink</code>
+                                        <button class="btn btn-sm btn-outline-secondary py-0" type="button"
+                                                onclick="navigator.clipboard.writeText(document.getElementById('@linkId').textContent).then(() => { this.innerHTML = '<i class=\'bi bi-check\'></i>'; setTimeout(() => { this.innerHTML = '<i class=\'bi bi-clipboard\'></i>'; }, 2000); })">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 

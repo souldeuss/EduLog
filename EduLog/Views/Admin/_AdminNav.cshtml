@@ -19,6 +19,10 @@
 
         return false;
     }
+
+    bool IsMyScheduleActive() =>
+        string.Equals(currentController, "Journal", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(currentAction, "TeacherSchedule", StringComparison.OrdinalIgnoreCase);
 }
 
 <ul class="nav nav-tabs mb-4">
@@ -60,6 +64,11 @@
     <li class="nav-item">
         <a class="nav-link @(IsActive("InviteTeacher") ? "active" : "")" asp-controller="Admin" asp-action="InviteTeacher">
             <i class="bi bi-person-plus"></i> Запрошення
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(IsMyScheduleActive() ? "active" : "")" asp-controller="Journal" asp-action="TeacherSchedule">
+            <i class="bi bi-calendar-week"></i> Мій розклад
         </a>
     </li>
 </ul>

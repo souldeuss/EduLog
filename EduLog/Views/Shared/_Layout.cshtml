@@ -20,9 +20,12 @@
                 </button>
                 <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
                     <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Головна</a>
-                        </li>
+                        @if (User.Identity == null || !User.Identity.IsAuthenticated)
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Головна</a>
+                            </li>
+                        }
                         @if (User.Identity != null && User.Identity.IsAuthenticated)
                         {
                             @if (User.IsInRole("Student"))
@@ -43,8 +46,8 @@
                                     </a>
                                 </li>
                                 <li class="nav-item">
-                                    <a class="nav-link text-dark" asp-controller="Student" asp-action="Classmates">
-                                        <i class="bi bi-people-fill"></i> Однокласники
+                                    <a class="nav-link text-dark" asp-controller="Student" asp-action="Achievements">
+                                        <i class="bi bi-trophy-fill"></i> Мої досягнення
                                     </a>
                                 </li>
                                 <li class="nav-item">
@@ -91,11 +94,11 @@
                         <ul class="navbar-nav ms-auto">
                         @if (User.Identity != null && User.Identity.IsAuthenticated)
                         {
-                            <li class="nav-item">
+                            <li class="nav-item d-flex align-items-center">
                                 @if (User.IsInRole("Student"))
                                 {
-                                    <a class="nav-link text-dark" asp-controller="Student" asp-action="Profile" title="Мій профіль">
-                                        <i class="bi bi-person-circle"></i>
+                                    <a class="nav-link text-dark d-flex align-items-center gap-2" asp-controller="Student" asp-action="Profile" title="Мій профіль">
+                                        @await Component.InvokeAsync("StudentAvatar", new { sizeClass = "student-avatar-sm" })
                                     </a>
                                 }
                                 else

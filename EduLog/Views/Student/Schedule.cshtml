@@ -20,11 +20,23 @@
             </p>
         </div>
 
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
             <a asp-action="Schedule" asp-route-weekStart="@Model.PreviousWeek.ToString("yyyy-MM-dd")"
                class="btn btn-outline-primary">
                 <i class="bi bi-chevron-left"></i> Попередній тиждень
             </a>
+
+            <form asp-action="Schedule" method="get" class="d-flex align-items-center gap-2 mb-0">
+                <label for="weekStartPicker" class="form-label mb-0 small text-secondary">
+                    <i class="bi bi-calendar3"></i> Перейти до дати:
+                </label>
+                <input type="date" id="weekStartPicker" name="weekStart"
+                       value="@Model.WeekStart.ToString("yyyy-MM-dd")"
+                       class="form-control form-control-sm"
+                       style="width: auto;"
+                       onchange="this.form.submit()" />
+            </form>
+
             <a asp-action="Schedule" class="btn btn-warning">
                 <i class="bi bi-calendar-check"></i> Поточний тиждень
             </a>
@@ -57,7 +69,7 @@
                     {
                         var classes = "cell"
                             + (cell.IsCurrent ? " current" : "")
-                            + (cell.HasAbsenceThisWeek ? " absent" : "");
+                            + (cell.HasAbsenceThisLesson ? " absent" : "");
                         <div class="@classes">
                             <div class="subj">@cell.SubjectName</div>
                             <div class="meta">@cell.TeacherName</div>
@@ -79,7 +91,7 @@
 
         <p class="text-muted mt-3 small">
             <i class="bi bi-info-circle"></i>
-            Поточний урок підсвічується зеленим. Червона рамка — у цей день був пропуск.
+            Поточний урок підсвічується зеленим. Червона рамка з позначкою «Н» — пропуск саме цього уроку.
         </p>
     </div>
 </div>

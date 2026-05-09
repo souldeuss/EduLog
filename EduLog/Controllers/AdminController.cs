@@ -1987,6 +1987,7 @@ namespace EduLog.Controllers
                 TempData["Error"] = ex.Message;
             }
 
+            TempData["InvitationLink"] = link;
             ViewData["Invitations"] = _context.Invitation.ToList();
 
             return View(new InviteTeacherViewModel());

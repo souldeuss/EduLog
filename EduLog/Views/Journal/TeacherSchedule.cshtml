@@ -2,6 +2,7 @@
 @{
     ViewData["Title"] = "Мій розклад";
 
+    var noTeacherLinked = ViewData["NoTeacherLinked"] as bool? ?? false;
     var slots = ViewData["ScheduleSlots"] as List<TeacherScheduleSlotView> ?? new();
     var selectedYear = ViewData["SelectedYear"] as AcademicYear;
     string[] dayNames = { "Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця" };
@@ -9,64 +10,81 @@
 }
 
 <h2 class="mb-3">Мій розклад</h2>
-@if (selectedYear != null)
-{
-    <div class="mb-3 text-muted">
-        Навчальний рік: <strong>@selectedYear.Name</strong>
-    </div>
-}
 
-@if (!slots.Any())
+@if (noTeacherLinked)
 {
-    <div class="alert alert-info">Розклад ще не сформовано.</div>
+    <div class="alert alert-warning d-flex align-items-start gap-2">
+        <i class="bi bi-exclamation-triangle-fill fs-5 mt-1"></i>
+        <div>
+            <strong>Профіль вчителя не прив'язано.</strong><br />
+            Щоб бачити власний розклад, необхідно прив'язати ваш обліковий запис до профілю вчителя.
+            Зверніться до адміністратора школи або перейдіть до розділу
+            <a asp-controller="Admin" asp-action="Teachers">Вчителі</a>
+            та встановіть зв'язок між обліковим записом і профілем вчителя.
+        </div>
+    </div>
 }
 else
 {
-    <div class="table-responsive">
-        <table class="table table-bordered align-middle text-center">
-            <thead>
-                <tr>
-                    <th>Урок</th>
-                    @for (var day = 1; day <= 5; day++)
-                    {
-                        <th>@dayNames[day - 1]</th>
-                    }
-                </tr>
-            </thead>
-            <tbody>
-                @for (var lesson = 1; lesson <= maxLesson; lesson++)
-                {
+    if (selectedYear != null)
+    {
+        <div class="mb-3 text-muted">
+            Навчальний рік: <strong>@selectedYear.Name</strong>
+        </div>
+    }
+
+    if (!slots.Any())
+    {
+        <div class="alert alert-info">Розклад ще не сформовано.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-bordered align-middle text-center">
+                <thead>
                     <tr>
-                        <th class="table-light">@lesson</th>
+                        <th>Урок</th>
                         @for (var day = 1; day <= 5; day++)
                         {
-                            var daySlots = slots.Where(s => s.DayOfWeek == day && s.LessonNumber == lesson).ToList();
-                            if (daySlots.Count == 0)
-                            {
-                                <td></td>
-                            }
-                            else
-                            {
-                                <td>
-                                    @foreach (var slot in daySlots)
-                                    {
-                                        <div class="fw-semibold">@slot.SubjectName</div>
-                                        <div>@slot.ClassName</div>
-                                        @if (!string.IsNullOrWhiteSpace(slot.Room))
-                                        {
-                                            <div class="text-muted">Каб. @slot.Room</div>
-                                        }
-                                        @if (slot != daySlots.Last())
-                                        {
-                                            <hr class="my-1" />
-                                        }
-                                    }
-                                </td>
-                            }
+                            <th>@dayNames[day - 1]</th>
                         }
                     </tr>
-                }
-            </tbody>
-        </table>
-    </div>
+                </thead>
+                <tbody>
+                    @for (var lesson = 1; lesson <= maxLesson; lesson++)
+                    {
+                        <tr>
+                            <th class="table-light">@lesson</th>
+                            @for (var day = 1; day <= 5; day++)
+                            {
+                                var daySlots = slots.Where(s => s.DayOfWeek == day && s.LessonNumber == lesson).ToList();
+                                if (daySlots.Count == 0)
+                                {
+                                    <td></td>
+                                }
+                                else
+                                {
+                                    <td>
+                                        @foreach (var slot in daySlots)
+                                        {
+                                            <div class="fw-semibold">@slot.SubjectName</div>
+                                            <div>@slot.ClassName</div>
+                                            @if (!string.IsNullOrWhiteSpace(slot.Room))
+                                            {
+                                                <div class="text-muted">Каб. @slot.Room</div>
+                                            }
+                                            @if (slot != daySlots.Last())
+                                            {
+                                                <hr class="my-1" />
+                                            }
+                                        }
+                                    </td>
+                                }
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 }
