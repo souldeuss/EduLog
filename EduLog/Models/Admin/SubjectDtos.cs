@@ -36,4 +36,12 @@ namespace EduLog.Models.Admin
         public int SubjectId { get; set; }
         public int TeacherId { get; set; }
     }
+
+    public class BindSubjectsRequest
+    {
+        public int[] SubjectIds { get; set; } = System.Array.Empty<int>();
+        public int TeacherId { get; set; }
+        public int[] ClassIds { get; set; } = System.Array.Empty<int>();
+        public int HoursPerWeek { get; set; } = 1;
+    }
 }

@@ -1713,6 +1713,111 @@ namespace EduLog.Controllers
         }
 
         [HttpGet]
+        public async Task<IActionResult> GetTeachersForSubjectAndClass(int subjectId, int classId)
+        {
+            var classBound = await _context.ClassSubject
+                .AnyAsync(cs => cs.ClassId == classId && cs.SubjectId == subjectId);
+            if (!classBound)
+                return Json(new { success = true, classBound = false, teachers = Array.Empty<object>() });
+
+            var teachers = await _context.SubjectTeacher
+                .Where(st => st.SubjectId == subjectId)
+                .Include(st => st.Teacher)
+                .Select(st => new
+                {
+                    id = st.TeacherId,
+                    name = $"{st.Teacher.Surname} {st.Teacher.Name}".Trim()
+                })
+                .OrderBy(t => t.name)
+                .ToListAsync();
+
+            return Json(new { success = true, classBound = true, teachers });
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetSubjectRoomInfo(int subjectId, int classId)
+        {
+            var subject = await _context.Subject
+                .Where(s => s.Id == subjectId)
+                .Select(s => new
+                {
+                    s.IsRoomFixed,
+                    DefaultRoomNumber = s.DefaultRoom != null ? s.DefaultRoom.Number : null
+                })
+                .FirstOrDefaultAsync();
+            if (subject == null)
+                return NotFound(new { success = false, message = "Предмет не знайдено." });
+
+            var classRoom = await _context.Class
+                .Where(c => c.Id == classId)
+                .Select(c => c.Room != null ? c.Room.Number : null)
+                .FirstOrDefaultAsync();
+
+            var room = subject.IsRoomFixed
+                ? subject.DefaultRoomNumber ?? string.Empty
+                : classRoom ?? string.Empty;
+
+            return Json(new
+            {
+                success = true,
+                isFixed = subject.IsRoomFixed,
+                room
+            });
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetConflicts(int yearId, int? classId)
+        {
+            var schoolId = _tenantService.SchoolId;
+            if (schoolId == null)
+                return BadRequest(new { success = false, message = "School is not selected." });
+
+            var allSlots = await _context.ScheduleSlot
+                .Include(s => s.Teacher)
+                .Include(s => s.Class)
+                .Where(s => s.AcademicYearId == yearId)
+                .ToListAsync();
+
+            var conflicts = DetectConflicts(allSlots);
+
+            var classSlotIds = classId.HasValue
+                ? allSlots.Where(s => s.ClassId == classId.Value).Select(s => s.Id).ToHashSet()
+                : null;
+
+            var totalCount = conflicts.Count;
+            var items = conflicts
+                .Select(kv =>
+                {
+                    var slot = allSlots.FirstOrDefault(s => s.Id == kv.Key);
+                    return new
+                    {
+                        slotId = kv.Key,
+                        dayOfWeek = slot?.DayOfWeek ?? 0,
+                        lessonNumber = slot?.LessonNumber ?? 0,
+                        className = slot?.Class?.Name ?? string.Empty,
+                        messages = kv.Value,
+                        belongsToClass = classSlotIds == null || classSlotIds.Contains(kv.Key)
+                    };
+                })
+                .OrderBy(x => x.dayOfWeek)
+                .ThenBy(x => x.lessonNumber)
+                .ToList();
+
+            var classConflictSlotIds = items
+                .Where(i => i.belongsToClass)
+                .Select(i => i.slotId)
+                .ToList();
+
+            return Json(new
+            {
+                success = true,
+                count = totalCount,
+                conflicts = items,
+                classConflictSlotIds
+            });
+        }
+
+        [HttpGet]
         public IActionResult GetTeacherSchedule(int yearId, int teacherId)
         {
             var schoolId = _tenantService.SchoolId;
@@ -1991,6 +2096,293 @@ namespace EduLog.Controllers
             ViewData["Invitations"] = _context.Invitation.ToList();
 
             return View(new InviteTeacherViewModel());
+        }
+
+        // ───────── Bulk subject binding ─────────
+        [HttpPost]
+        public async Task<IActionResult> BindSubjects([FromBody] BindSubjectsRequest request)
+        {
+            if (request == null || request.SubjectIds == null || request.SubjectIds.Length == 0)
+                return Json(new { success = false, message = "Оберіть хоча б один предмет." });
+            if (request.TeacherId <= 0)
+                return Json(new { success = false, message = "Оберіть вчителя." });
+            if (request.ClassIds == null || request.ClassIds.Length == 0)
+                return Json(new { success = false, message = "Оберіть хоча б один клас." });
+
+            var hours = Math.Max(1, request.HoursPerWeek);
+            var subjects = await _context.Subject
+                .Where(s => request.SubjectIds.Contains(s.Id))
+                .ToListAsync();
+            var classes = await _context.Class
+                .Where(c => request.ClassIds.Contains(c.Id))
+                .Select(c => c.Id).ToListAsync();
+
+            var addedTeacher = 0;
+            var addedClass = 0;
+            foreach (var subject in subjects)
+            {
+                subject.HoursPerWeek = hours;
+                var hasTeacher = await _context.SubjectTeacher
+                    .AnyAsync(st => st.SubjectId == subject.Id && st.TeacherId == request.TeacherId);
+                if (!hasTeacher)
+                {
+                    _context.SubjectTeacher.Add(new SubjectTeacher
+                    {
+                        SubjectId = subject.Id,
+                        TeacherId = request.TeacherId
+                    });
+                    addedTeacher++;
+                }
+                if (subject.TeacherId == 0) subject.TeacherId = request.TeacherId;
+
+                foreach (var classId in classes)
+                {
+                    var hasClass = await _context.ClassSubject
+                        .AnyAsync(cs => cs.SubjectId == subject.Id && cs.ClassId == classId);
+                    if (!hasClass)
+                    {
+                        _context.ClassSubject.Add(new ClassSubject
+                        {
+                            SubjectId = subject.Id,
+                            ClassId = classId
+                        });
+                        addedClass++;
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return Json(new
+            {
+                success = true,
+                subjects = subjects.Count,
+                teacherLinks = addedTeacher,
+                classLinks = addedClass,
+                hoursPerWeek = hours
+            });
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> ExportSubjects()
+        {
+            var subjects = await _context.Subject
+                .Include(s => s.SubjectTeachers).ThenInclude(st => st.Teacher)
+                .Include(s => s.ClassSubjects).ThenInclude(cs => cs.Class)
+                .OrderBy(s => s.Name)
+                .ToListAsync();
+
+            using var workbook = new ClosedXML.Excel.XLWorkbook();
+            var sheet = workbook.Worksheets.Add("Прив'язки");
+            sheet.Cell(1, 1).Value = "Предмет";
+            sheet.Cell(1, 2).Value = "Вчителі";
+            sheet.Cell(1, 3).Value = "Класи";
+            sheet.Cell(1, 4).Value = "Год/тиж";
+            sheet.Range(1, 1, 1, 4).Style.Font.Bold = true;
+
+            var row = 2;
+            foreach (var s in subjects)
+            {
+                sheet.Cell(row, 1).Value = s.Name;
+                sheet.Cell(row, 2).Value = string.Join("; ", s.SubjectTeachers
+                    .Select(st => $"{st.Teacher.Surname} {st.Teacher.Name}".Trim()));
+                sheet.Cell(row, 3).Value = string.Join(", ", s.ClassSubjects
+                    .Select(cs => cs.Class.Name)
+                    .OrderBy(n => n));
+                sheet.Cell(row, 4).Value = s.HoursPerWeek;
+                row++;
+            }
+            sheet.Columns().AdjustToContents();
+
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            var fileName = $"subjects-{DateTime.Now:yyyyMMdd-HHmm}.xlsx";
+            return File(stream.ToArray(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                fileName);
+        }
+
+        // ───────── Teacher absences & substitutions ─────────
+        [HttpGet]
+        public async Task<IActionResult> GetTeacherAbsences(int teacherId)
+        {
+            var absences = await _context.TeacherAbsence
+                .Where(a => a.TeacherId == teacherId)
+                .OrderByDescending(a => a.StartDate)
+                .Select(a => new
+                {
+                    id = a.Id,
+                    type = a.Type.ToString(),
+                    typeLabel = a.Type == TeacherAbsenceType.SickLeave ? "Лікарняний"
+                              : a.Type == TeacherAbsenceType.Vacation ? "Відпустка"
+                              : "Інше",
+                    startDate = a.StartDate.ToString("yyyy-MM-dd"),
+                    endDate = a.EndDate.ToString("yyyy-MM-dd"),
+                    note = a.Note,
+                    overrideCount = a.Overrides.Count(),
+                    coveredCount = a.Overrides.Count(o => o.SubstituteTeacherId != null)
+                })
+                .ToListAsync();
+            return Json(new { success = true, absences });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> CreateTeacherAbsence(int teacherId, TeacherAbsenceType type, DateTime startDate, DateTime endDate, string? note)
+        {
+            if (endDate < startDate)
+                return BadRequest(new { success = false, message = "Дата завершення не може бути раніше початку." });
+
+            var teacher = await _context.Teacher.FindAsync(teacherId);
+            if (teacher == null)
+                return NotFound(new { success = false, message = "Вчителя не знайдено." });
+
+            var absence = new TeacherAbsence
+            {
+                TeacherId = teacherId,
+                Type = type,
+                StartDate = startDate.Date,
+                EndDate = endDate.Date,
+                Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.TeacherAbsence.Add(absence);
+            await _context.SaveChangesAsync();
+
+            var occurrences = await BuildAbsenceOccurrencesAsync(absence);
+            return Json(new { success = true, absenceId = absence.Id, occurrences });
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAbsenceOccurrences(int absenceId)
+        {
+            var absence = await _context.TeacherAbsence.FirstOrDefaultAsync(a => a.Id == absenceId);
+            if (absence == null)
+                return NotFound(new { success = false, message = "Запис не знайдено." });
+            var occurrences = await BuildAbsenceOccurrencesAsync(absence);
+            return Json(new { success = true, occurrences });
+        }
+
+        private async Task<List<object>> BuildAbsenceOccurrencesAsync(TeacherAbsence absence)
+        {
+            var slots = await _context.ScheduleSlot
+                .Include(s => s.Subject)
+                .Include(s => s.Class)
+                .Where(s => s.TeacherId == absence.TeacherId)
+                .ToListAsync();
+
+            var existingOverrides = await _context.ScheduleSlotOverride
+                .Where(o => o.Date >= absence.StartDate && o.Date <= absence.EndDate)
+                .ToListAsync();
+
+            var allTeachers = await _context.Teacher
+                .OrderBy(t => t.Surname).ThenBy(t => t.Name)
+                .Select(t => new { t.Id, t.Name, t.Surname, t.Patronymic })
+                .ToListAsync();
+
+            var allSlots = await _context.ScheduleSlot
+                .Select(s => new { s.TeacherId, s.DayOfWeek, s.LessonNumber })
+                .ToListAsync();
+
+            string[] dayNames = { "Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця" };
+            var result = new List<object>();
+
+            for (var date = absence.StartDate.Date; date <= absence.EndDate.Date; date = date.AddDays(1))
+            {
+                var dow = (int)date.DayOfWeek;
+                if (dow == 0 || dow > 5) continue; // skip Sun/Sat
+                var isoDow = dow; // Mon=1..Fri=5
+
+                var todaySlots = slots.Where(s => s.DayOfWeek == isoDow).ToList();
+                foreach (var slot in todaySlots)
+                {
+                    var ovr = existingOverrides
+                        .FirstOrDefault(o => o.ScheduleSlotId == slot.Id && o.Date.Date == date.Date);
+
+                    var busyTeacherIds = allSlots
+                        .Where(s => s.DayOfWeek == slot.DayOfWeek && s.LessonNumber == slot.LessonNumber)
+                        .Select(s => s.TeacherId)
+                        .ToHashSet();
+
+                    var availableTeachers = allTeachers
+                        .Where(t => t.Id != absence.TeacherId && !busyTeacherIds.Contains(t.Id))
+                        .Select(t => new { id = t.Id, name = $"{t.Surname} {t.Name} {t.Patronymic}".Trim() })
+                        .ToList();
+
+                    result.Add(new
+                    {
+                        slotId = slot.Id,
+                        date = date.ToString("yyyy-MM-dd"),
+                        dayName = dayNames[isoDow - 1],
+                        lessonNumber = slot.LessonNumber,
+                        subjectName = slot.Subject.Name,
+                        className = slot.Class.Name,
+                        room = slot.Room,
+                        currentSubstituteId = ovr?.SubstituteTeacherId,
+                        overrideId = ovr?.Id,
+                        availableTeachers
+                    });
+                }
+            }
+
+            return result;
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> SetSlotSubstitution(int slotId, DateTime date, int? substituteTeacherId, int? absenceId)
+        {
+            var slot = await _context.ScheduleSlot.FindAsync(slotId);
+            if (slot == null)
+                return NotFound(new { success = false, message = "Слот не знайдено." });
+
+            if (substituteTeacherId.HasValue)
+            {
+                var clash = await _context.ScheduleSlot.AnyAsync(s =>
+                    s.TeacherId == substituteTeacherId.Value &&
+                    s.DayOfWeek == slot.DayOfWeek &&
+                    s.LessonNumber == slot.LessonNumber &&
+                    s.Id != slotId);
+                if (clash)
+                    return BadRequest(new { success = false, message = "Обраний вчитель зайнятий у цей таймслот." });
+            }
+
+            var existing = await _context.ScheduleSlotOverride
+                .FirstOrDefaultAsync(o => o.ScheduleSlotId == slotId && o.Date == date.Date);
+
+            if (existing != null)
+            {
+                existing.SubstituteTeacherId = substituteTeacherId;
+                existing.AbsenceId = absenceId;
+            }
+            else
+            {
+                _context.ScheduleSlotOverride.Add(new ScheduleSlotOverride
+                {
+                    ScheduleSlotId = slotId,
+                    Date = date.Date,
+                    SubstituteTeacherId = substituteTeacherId,
+                    AbsenceId = absenceId,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            await _context.SaveChangesAsync();
+            return Json(new { success = true });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteTeacherAbsence(int id)
+        {
+            var absence = await _context.TeacherAbsence.FirstOrDefaultAsync(a => a.Id == id);
+            if (absence == null)
+                return NotFound(new { success = false, message = "Запис не знайдено." });
+
+            var overrides = _context.ScheduleSlotOverride.Where(o => o.AbsenceId == id);
+            _context.ScheduleSlotOverride.RemoveRange(overrides);
+            _context.TeacherAbsence.Remove(absence);
+            await _context.SaveChangesAsync();
+            return Json(new { success = true });
         }
 
         // ───────── Helpers ─────────

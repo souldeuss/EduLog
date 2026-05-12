@@ -22,14 +22,50 @@
     </div>
 }
 
-<!-- Import bar -->
-<div class="alert alert-secondary py-2 px-3 d-flex align-items-center gap-2 mb-3 small" id="importBar">
-    <i class="bi bi-file-earmark-spreadsheet"></i>
-    <span>Імпорт предметів з <strong>Excel або CSV</strong></span>
-    <button class="btn btn-sm btn-outline-primary ms-auto" onclick="document.getElementById('importFile').click()">
-        <i class="bi bi-upload"></i> Завантажити файл
+<!-- Collapsible Import/Export panel -->
+<div class="mb-3">
+    <button class="btn btn-sm btn-outline-secondary" type="button"
+            data-bs-toggle="collapse" data-bs-target="#impExpPanel" aria-expanded="false" aria-controls="impExpPanel">
+        <i class="bi bi-arrow-down-up"></i> Імпорт / Експорт
     </button>
-    <input type="file" id="importFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadImport(this)">
+    <div class="collapse mt-2" id="impExpPanel">
+        <div class="card card-body py-2 px-3">
+            <div class="d-flex flex-wrap align-items-center gap-2 small">
+                <i class="bi bi-file-earmark-spreadsheet"></i>
+                <span>Імпорт предметів з <strong>Excel або CSV</strong></span>
+                <button class="btn btn-sm btn-outline-primary" onclick="document.getElementById('importFile').click()">
+                    <i class="bi bi-upload"></i> Завантажити файл
+                </button>
+                <input type="file" id="importFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadImport(this)">
+                <a class="btn btn-sm btn-outline-success ms-auto" asp-action="ExportSubjects">
+                    <i class="bi bi-download"></i> Експорт XLSX
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Mode tabs -->
+<ul class="nav nav-tabs mb-3" id="subjectsModeTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="modeListBtn" data-bs-toggle="tab" data-bs-target="#modeList" type="button" role="tab">
+            <i class="bi bi-list-task"></i> Предмети
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="modeBindBtn" data-bs-toggle="tab" data-bs-target="#modeBind" type="button" role="tab">
+            <i class="bi bi-link-45deg"></i> Прив'язування
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="subjectsModeContent">
+<div class="tab-pane fade show active" id="modeList" role="tabpanel">
+
+<!-- Import bar -->
+<div class="alert alert-secondary py-2 px-3 align-items-center gap-2 mb-3 small d-none" id="importBar">
+    <i class="bi bi-file-earmark-spreadsheet"></i>
+    <span>Імпорт предметів</span>
 </div>
 
 <!-- Import preview panel -->
@@ -603,6 +639,85 @@
         </div>
     </div>
 </div>
+
+</div> <!-- /modeList -->
+
+<div class="tab-pane fade" id="modeBind" role="tabpanel">
+    <div class="card">
+        <div class="card-header bg-primary-subtle">
+            <strong><i class="bi bi-link-45deg"></i> Майстер прив'язування</strong>
+            <span class="text-muted small ms-2">Оберіть предмети → вчителя → класи → години.</span>
+        </div>
+        <div class="card-body">
+            <form id="bindWizardForm" data-bind-url="@Url.Action("BindSubjects", "Admin")"
+                  data-antiforgery="@Html.AntiForgeryToken()">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold"><span class="badge bg-primary">1</span> Предмети</label>
+                        <input type="search" id="bindSubjectSearch" class="form-control form-control-sm mb-2" placeholder="Пошук предмета..." />
+                        <div class="border rounded p-2" style="max-height:260px;overflow:auto" id="bindSubjectsList">
+                            @foreach (var s in Model.OrderBy(x => x.Name))
+                            {
+                                <div class="form-check bind-subject-item" data-name="@s.Name.ToLowerInvariant()">
+                                    <input class="form-check-input bind-subject-cb" type="checkbox" value="@s.Id" id="bind-s-@s.Id" />
+                                    <label class="form-check-label" for="bind-s-@s.Id">@s.Name</label>
+                                </div>
+                            }
+                        </div>
+                        <div class="small text-muted mt-1">
+                            <button type="button" class="btn btn-link btn-sm p-0" id="bindSubjectsAll">Всі</button> ·
+                            <button type="button" class="btn btn-link btn-sm p-0" id="bindSubjectsNone">Жодного</button>
+                            · обрано: <span id="bindSubjectsCount">0</span>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold"><span class="badge bg-primary">2</span> Вчитель</label>
+                        <select id="bindTeacherSelect" class="form-select form-select-sm mb-3">
+                            <option value="">— оберіть вчителя —</option>
+                            @foreach (var t in teachers.OrderBy(x => x.Surname))
+                            {
+                                <option value="@t.Id">@t.Surname @t.Name @t.Patronymic</option>
+                            }
+                        </select>
+
+                        <label class="form-label fw-semibold"><span class="badge bg-primary">4</span> Год/тиж</label>
+                        <input type="number" id="bindHours" class="form-control form-control-sm" min="1" max="12" value="1" />
+                        <div class="small text-muted">Застосується до всіх обраних предметів.</div>
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label fw-semibold"><span class="badge bg-primary">3</span> Класи</label>
+                        <div class="d-flex flex-wrap gap-1 mb-2" id="bindClassesList">
+                            @foreach (var c in classes)
+                            {
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input bind-class-cb" type="checkbox" value="@c.Id" id="bind-c-@c.Id" />
+                                    <label class="form-check-label" for="bind-c-@c.Id">@c.Name</label>
+                                </div>
+                            }
+                        </div>
+                        <div class="small text-muted">
+                            <button type="button" class="btn btn-link btn-sm p-0" id="bindClassesAll">Всі</button> ·
+                            <button type="button" class="btn btn-link btn-sm p-0" id="bindClassesNone">Жодного</button>
+                            · обрано: <span id="bindClassesCount">0</span>
+                        </div>
+                    </div>
+
+                    <div class="col-12 d-flex gap-2 align-items-center">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2-circle"></i> Зберегти прив'язки
+                        </button>
+                        <button type="reset" class="btn btn-outline-secondary" id="bindReset">Скинути</button>
+                        <span id="bindMsg" class="small ms-2"></span>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div> <!-- /modeBind -->
+
+</div> <!-- /tab-content -->
 
 @section Scripts {
 <script>
@@ -1290,5 +1405,96 @@
 
         applyGrouping();
     });
+
+    // ───────── Bind wizard ─────────
+    (function () {
+        var form = document.getElementById('bindWizardForm');
+        if (!form) return;
+        var bindUrl = form.dataset.bindUrl;
+        var afHtml = form.dataset.antiforgery || '';
+        var afMatch = afHtml.match(/value="([^"]+)"/);
+        var afToken = afMatch ? afMatch[1] : '';
+
+        var search = document.getElementById('bindSubjectSearch');
+        var subjectsList = document.getElementById('bindSubjectsList');
+        var subjectCount = document.getElementById('bindSubjectsCount');
+        var classCount = document.getElementById('bindClassesCount');
+        var msg = document.getElementById('bindMsg');
+
+        function updateCounts() {
+            subjectCount.textContent = document.querySelectorAll('.bind-subject-cb:checked').length;
+            classCount.textContent = document.querySelectorAll('.bind-class-cb:checked').length;
+        }
+
+        search?.addEventListener('input', function () {
+            var q = (search.value || '').toLowerCase().trim();
+            document.querySelectorAll('.bind-subject-item').forEach(function (el) {
+                el.style.display = !q || (el.dataset.name || '').includes(q) ? '' : 'none';
+            });
+        });
+
+        document.getElementById('bindSubjectsAll')?.addEventListener('click', function () {
+            document.querySelectorAll('.bind-subject-item').forEach(function (el) {
+                if (el.style.display !== 'none') el.querySelector('.bind-subject-cb').checked = true;
+            });
+            updateCounts();
+        });
+        document.getElementById('bindSubjectsNone')?.addEventListener('click', function () {
+            document.querySelectorAll('.bind-subject-cb').forEach(function (cb) { cb.checked = false; });
+            updateCounts();
+        });
+        document.getElementById('bindClassesAll')?.addEventListener('click', function () {
+            document.querySelectorAll('.bind-class-cb').forEach(function (cb) { cb.checked = true; });
+            updateCounts();
+        });
+        document.getElementById('bindClassesNone')?.addEventListener('click', function () {
+            document.querySelectorAll('.bind-class-cb').forEach(function (cb) { cb.checked = false; });
+            updateCounts();
+        });
+
+        document.addEventListener('change', function (e) {
+            if (e.target.classList.contains('bind-subject-cb') || e.target.classList.contains('bind-class-cb')) {
+                updateCounts();
+            }
+        });
+
+        document.getElementById('bindReset')?.addEventListener('click', function () {
+            setTimeout(function () { updateCounts(); if (msg) msg.textContent = ''; }, 0);
+        });
+
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            if (msg) { msg.textContent = ''; msg.className = 'small ms-2'; }
+            var subjectIds = Array.from(document.querySelectorAll('.bind-subject-cb:checked')).map(function (c) { return parseInt(c.value, 10); });
+            var classIds = Array.from(document.querySelectorAll('.bind-class-cb:checked')).map(function (c) { return parseInt(c.value, 10); });
+            var teacherId = parseInt(document.getElementById('bindTeacherSelect').value || '0', 10);
+            var hours = Math.max(1, parseInt(document.getElementById('bindHours').value || '1', 10));
+
+            if (!subjectIds.length) { msg.textContent = 'Оберіть хоча б один предмет.'; msg.classList.add('text-danger'); return; }
+            if (!teacherId) { msg.textContent = 'Оберіть вчителя.'; msg.classList.add('text-danger'); return; }
+            if (!classIds.length) { msg.textContent = 'Оберіть хоча б один клас.'; msg.classList.add('text-danger'); return; }
+
+            try {
+                var r = await fetch(bindUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({ subjectIds: subjectIds, teacherId: teacherId, classIds: classIds, hoursPerWeek: hours })
+                });
+                var data = await r.json();
+                if (!r.ok || !data.success) throw new Error(data.message || 'Помилка');
+                msg.classList.add('text-success');
+                msg.textContent = `Готово: ${data.subjects} предмет(ів), +${data.teacherLinks} вчитель-зв'язків, +${data.classLinks} клас-зв'язків. Год/тиж: ${data.hoursPerWeek}`;
+                setTimeout(function () { window.location.reload(); }, 1500);
+            } catch (err) {
+                msg.classList.add('text-danger');
+                msg.textContent = err.message || 'Помилка';
+            }
+        });
+
+        updateCounts();
+    })();
 </script>
 }

@@ -116,6 +116,22 @@
         border: 2px solid #dc3545;
     }
 
+    .subject-overview-item.is-exhausted {
+        cursor: not-allowed;
+        filter: grayscale(.4);
+    }
+
+    .subject-overview-item.is-exhausted .progress-bar {
+        background-color: #6c757d !important;
+    }
+
+    .subject-overview-item .exhausted-label {
+        font-size: .65rem;
+        font-weight: 500;
+        margin-left: .35rem;
+        vertical-align: middle;
+    }
+
     .lesson-card-subject {
         font-weight: 700;
         white-space: nowrap;
@@ -682,32 +698,34 @@ else
                 <span>⚠️ Конфлікти</span>
                 <span class="badge text-bg-danger" id="sideConflictCount">@conflicts.Count</span>
             </h6>
-            @if (conflicts.Any())
-            {
-                <ul class="small ps-3 mb-0">
-                    @foreach (var kv in conflicts)
-                    {
-                        var conflictSlot = slots.FirstOrDefault(s => s.Id == kv.Key);
-                        foreach (var msg in kv.Value)
+            <div id="conflictsListContainer">
+                @if (conflicts.Any())
+                {
+                    <ul class="small ps-3 mb-0">
+                        @foreach (var kv in conflicts)
                         {
-                            <li class="mb-2">
-                                @if (conflictSlot != null)
-                                {
-                                    <strong>@dayNames[conflictSlot.DayOfWeek - 1], урок @conflictSlot.LessonNumber:</strong> @msg
-                                }
-                                else
-                                {
-                                    @msg
-                                }
-                            </li>
+                            var conflictSlot = slots.FirstOrDefault(s => s.Id == kv.Key);
+                            foreach (var msg in kv.Value)
+                            {
+                                <li class="mb-2">
+                                    @if (conflictSlot != null)
+                                    {
+                                        <strong>@dayNames[conflictSlot.DayOfWeek - 1], урок @conflictSlot.LessonNumber:</strong> @msg
+                                    }
+                                    else
+                                    {
+                                        @msg
+                                    }
+                                </li>
+                            }
                         }
-                    }
-                </ul>
-            }
-            else
-            {
-                <p class="text-muted small mb-0">Конфліктів не знайдено.</p>
-            }
+                    </ul>
+                }
+                else
+                {
+                    <p class="text-muted small mb-0">Конфліктів не знайдено.</p>
+                }
+            </div>
         </div>
 
         <div>
@@ -1020,6 +1038,165 @@ else
 
             if (sideConflictCount) {
                 sideConflictCount.textContent = count;
+            }
+        }
+
+        async function refreshConflicts() {
+            const yearId = Number('@(selectedYear?.Id ?? 0)');
+            const classId = Number('@(selectedClass?.Id ?? 0)');
+            if (!yearId) return;
+            try {
+                const url = '@Url.Action("GetConflicts", "Admin")' + `?yearId=${yearId}&classId=${classId || 0}`;
+                const r = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                if (!r.ok) return;
+                const data = await r.json();
+                renderConflictBadge(data.count || 0);
+
+                const container = document.getElementById('conflictsListContainer');
+                if (container) {
+                    if (!data.conflicts || data.conflicts.length === 0) {
+                        container.innerHTML = '<p class="text-muted small mb-0">Конфліктів не знайдено.</p>';
+                    } else {
+                        const items = data.conflicts.map(c => {
+                            const dayLabel = c.dayOfWeek > 0 ? `${dayNames[c.dayOfWeek - 1]}, урок ${c.lessonNumber}` : '';
+                            return (c.messages || []).map(m => `
+                                <li class="mb-2">
+                                    ${dayLabel ? `<strong>${escapeHtml(dayLabel)}:</strong> ` : ''}${escapeHtml(m)}
+                                    ${c.className ? `<span class="text-muted small"> · ${escapeHtml(c.className)}</span>` : ''}
+                                </li>`).join('');
+                        }).join('');
+                        container.innerHTML = `<ul class="small ps-3 mb-0">${items}</ul>`;
+                    }
+                }
+
+                const conflictIds = new Set((data.classConflictSlotIds || []).map(Number));
+                document.querySelectorAll('.lesson-card').forEach(card => {
+                    const id = Number(card.dataset.slotId || 0);
+                    const isC = id > 0 && conflictIds.has(id);
+                    card.classList.toggle('is-conflict', isC);
+                });
+            } catch { /* noop */ }
+        }
+
+        function updateSidebarAssigned(subjectId, delta) {
+            if (!subjectId) return;
+            const item = document.querySelector(`#subjectSidebar .subject-overview-item[data-subject-id="${subjectId}"]`);
+            if (!item) return;
+            const required = Number(item.dataset.required || 0);
+            const assigned = Math.max(0, Number(item.dataset.assigned || 0) + delta);
+            item.dataset.assigned = String(assigned);
+            const counter = item.querySelector('.subject-overview-counter');
+            if (counter) counter.textContent = `${assigned}/${required}`;
+            const remaining = required - assigned;
+            const badge = item.querySelector('.remaining-badge');
+            if (badge) {
+                badge.textContent = remaining > 0 ? `+${remaining}` : String(remaining);
+                badge.classList.remove('bg-danger', 'bg-secondary', 'bg-primary');
+                badge.classList.add(assigned > required ? 'bg-danger' : (remaining === 0 ? 'bg-secondary' : 'bg-primary'));
+            }
+            const progress = item.querySelector('.progress-bar');
+            if (progress) {
+                const pct = required > 0 ? Math.min(100, Math.round(assigned * 100 / required)) : (assigned > 0 ? 100 : 0);
+                progress.style.width = pct + '%';
+            }
+            const status = item.querySelector('.subject-overview-status');
+            const isOver = assigned > required;
+            if (status) {
+                status.textContent = isOver ? `Перевищення: +${assigned - required}` : 'У межах норми';
+                status.classList.toggle('text-danger', isOver);
+                status.classList.toggle('text-muted', !isOver);
+            }
+            item.classList.toggle('is-over', isOver);
+
+            const isExhausted = required > 0 && assigned >= required;
+            item.classList.toggle('is-exhausted', isExhausted);
+            item.draggable = !isExhausted;
+            if (isExhausted) {
+                item.style.opacity = '0.55';
+                if (!item.querySelector('.exhausted-label')) {
+                    const lbl = document.createElement('span');
+                    lbl.className = 'badge bg-secondary exhausted-label ms-1';
+                    lbl.textContent = 'вичерпано';
+                    item.querySelector('.subject-overview-title')?.appendChild(lbl);
+                }
+            } else {
+                item.style.opacity = '';
+                item.querySelector('.exhausted-label')?.remove();
+            }
+
+            reorderSidebarItems();
+        }
+
+        function reorderSidebarItems() {
+            const sidebar = document.getElementById('subjectSidebar');
+            if (!sidebar) return;
+            const items = Array.from(sidebar.querySelectorAll('.subject-overview-item'));
+            const active = items.filter(i => !i.classList.contains('is-exhausted'));
+            const exhausted = items.filter(i => i.classList.contains('is-exhausted'));
+            [...active, ...exhausted].forEach(el => sidebar.appendChild(el));
+        }
+
+        async function applyModalSubjectFilter() {
+            const subjectSelect = document.getElementById('modalSubject');
+            const teacherSelect = document.getElementById('modalTeacher');
+            const roomInput = document.getElementById('modalRoom');
+            const classId = Number(document.getElementById('modalClassId')?.value || 0);
+            if (!subjectSelect || !teacherSelect || !classId) return;
+            const subjectId = Number(subjectSelect.value || 0);
+            if (!subjectId) return;
+
+            // 1) Filter teachers
+            try {
+                const r = await fetch('@Url.Action("GetTeachersForSubjectAndClass", "Admin")' + `?subjectId=${subjectId}&classId=${classId}`,
+                    { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                if (r.ok) {
+                    const data = await r.json();
+                    const previous = teacherSelect.value;
+                    teacherSelect.innerHTML = '';
+                    if (!data.teachers || data.teachers.length === 0) {
+                        const opt = document.createElement('option');
+                        opt.value = '';
+                        opt.textContent = data.classBound
+                            ? '— немає вчителів цього предмета —'
+                            : '— предмет не прив\'язано до класу —';
+                        opt.disabled = true;
+                        opt.selected = true;
+                        teacherSelect.appendChild(opt);
+                    } else {
+                        data.teachers.forEach(t => {
+                            const opt = document.createElement('option');
+                            opt.value = String(t.id);
+                            opt.textContent = t.name;
+                            teacherSelect.appendChild(opt);
+                        });
+                        if (previous && data.teachers.some(t => String(t.id) === String(previous))) {
+                            teacherSelect.value = previous;
+                        }
+                    }
+                }
+            } catch { /* noop */ }
+
+            // 2) Auto-fill room
+            if (roomInput) {
+                try {
+                    const r = await fetch('@Url.Action("GetSubjectRoomInfo", "Admin")' + `?subjectId=${subjectId}&classId=${classId}`,
+                        { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                    if (r.ok) {
+                        const info = await r.json();
+                        if (info.isFixed) {
+                            roomInput.value = info.room || '';
+                            roomInput.readOnly = true;
+                            roomInput.classList.add('bg-light');
+                        } else {
+                            roomInput.readOnly = false;
+                            roomInput.classList.remove('bg-light');
+                            if (!roomInput.value || roomInput.dataset.autoFill === '1') {
+                                roomInput.value = info.room || '';
+                                roomInput.dataset.autoFill = '1';
+                            }
+                        }
+                    }
+                } catch { /* noop */ }
             }
         }
 
@@ -1337,7 +1514,13 @@ else
             document.getElementById('modalLesson').value = lesson;
             document.getElementById('modalSubject').value = subjectId || '';
             document.getElementById('modalTeacher').value = teacherId || '';
-            document.getElementById('modalRoom').value = room || '';
+            const roomInput = document.getElementById('modalRoom');
+            if (roomInput) {
+                roomInput.value = room || '';
+                roomInput.readOnly = false;
+                roomInput.classList.remove('bg-light');
+                roomInput.dataset.autoFill = room ? '0' : '1';
+            }
             document.getElementById('modalTitle').textContent = `${dayNames[day - 1]}, урок ${lesson}${slotId ? ' (редагування)' : ' (новий)'}`;
 
             if (modalDeleteBtn) {
@@ -1346,6 +1529,17 @@ else
 
             activeEditCard = card;
             modal.show();
+
+            if (subjectId) {
+                applyModalSubjectFilter().then(() => {
+                    if (teacherId) {
+                        const teacherSelect = document.getElementById('modalTeacher');
+                        if (teacherSelect && Array.from(teacherSelect.options).some(o => String(o.value) === String(teacherId))) {
+                            teacherSelect.value = String(teacherId);
+                        }
+                    }
+                });
+            }
         }
 
         function attachBoardEvents() {
@@ -1377,12 +1571,15 @@ else
                     }
 
                     try {
+                        const removedSubjectId = Number(card.dataset.subjectId || 0);
                         await deleteSlotRequest(slotId);
                         const zone = card.closest('.drop-zone');
                         card.remove();
                         updateCellButton(zone);
                         registerDraftEvent({ type: 'delete', slotId });
                         updateStats();
+                        if (removedSubjectId) updateSidebarAssigned(removedSubjectId, -1);
+                        await refreshConflicts();
                         showToast('Урок видалено.');
                     } catch (error) {
                         showToast(error.message, true);
@@ -1396,6 +1593,7 @@ else
             if (typeof Sortable === 'undefined') return;
 
             const sidebar = document.getElementById('subjectSidebar');
+            let _sidebarOriginalSnapshot = null;
             if (sidebar) {
                 new Sortable(sidebar, {
                     group: { name: 'subjects', pull: 'clone', put: false },
@@ -1403,7 +1601,14 @@ else
                     animation: 150,
                     ghostClass: 'sortable-ghost',
                     chosenClass: 'sortable-chosen',
-                    filter: '.alert',
+                    filter: '.alert, .is-exhausted',
+                    preventOnFilter: true,
+                    onChoose: function (evt) {
+                        if (evt.item.classList.contains('is-exhausted')) {
+                            return;
+                        }
+                        _sidebarOriginalSnapshot = evt.item.cloneNode(true);
+                    },
                     onClone: function (evt) {
                         const clone = evt.clone;
                         const subjectName = clone.querySelector('.subject-overview-title')?.textContent?.trim() || '';
@@ -1412,6 +1617,15 @@ else
                         const border = hexToRgba(color, 0.6) || 'rgba(0,0,0,.08)';
                         clone.style.cssText = `padding:.5rem .75rem;border-radius:.75rem;border:1px solid ${border};background:${bg};font-weight:600;font-size:.9rem;`;
                         clone.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${normalizeHexColor(color) || color};margin-right:.4rem;vertical-align:middle"></span>${subjectName}`;
+                    },
+                    onEnd: function (evt) {
+                        // Sortable inserts evt.clone (which we visually styled) back into the sidebar.
+                        // Replace it with a snapshot of the original element so the sidebar item
+                        // keeps its full progress UI after every drag.
+                        if (_sidebarOriginalSnapshot && evt.clone && evt.clone.parentNode) {
+                            evt.clone.parentNode.replaceChild(_sidebarOriginalSnapshot, evt.clone);
+                        }
+                        _sidebarOriginalSnapshot = null;
                     }
                 });
             }
@@ -1475,6 +1689,7 @@ else
                                 updateCellButton(sourceZone);
                                 registerDraftEvent({ type: 'move', slotId: item.dataset.slotId, from: { day: originalDay, lesson: originalLesson }, to: { day: targetDay, lesson: targetLesson } });
                                 updateStats();
+                                await refreshConflicts();
                                 showToast('Урок переміщено.');
                             } catch (error) {
                                 item.dataset.day = String(originalDay);
@@ -1659,6 +1874,32 @@ else
 
             attachBoardEvents();
             initSortable();
+            reorderSidebarItems();
+            document.querySelectorAll('#subjectSidebar .subject-overview-item').forEach(item => {
+                const required = Number(item.dataset.required || 0);
+                const assigned = Number(item.dataset.assigned || 0);
+                if (required > 0 && assigned >= required) {
+                    item.classList.add('is-exhausted');
+                    item.draggable = false;
+                    item.style.opacity = '0.55';
+                    if (!item.querySelector('.exhausted-label')) {
+                        const lbl = document.createElement('span');
+                        lbl.className = 'badge bg-secondary exhausted-label ms-1';
+                        lbl.textContent = 'вичерпано';
+                        item.querySelector('.subject-overview-title')?.appendChild(lbl);
+                    }
+                }
+            });
+            reorderSidebarItems();
+
+            const modalSubjectEl = document.getElementById('modalSubject');
+            if (modalSubjectEl) {
+                modalSubjectEl.addEventListener('change', () => {
+                    const roomInput = document.getElementById('modalRoom');
+                    if (roomInput) roomInput.dataset.autoFill = '1';
+                    applyModalSubjectFilter();
+                });
+            }
 
             // ── View mode toggle ──
             btnViewClass?.addEventListener('click', () => setViewMode('class'));
@@ -1790,6 +2031,9 @@ else
                             throw new Error('Клітинку для уроку не знайдено.');
                         }
 
+                        const previousSubjectId = activeEditCard ? Number(activeEditCard.dataset.subjectId || 0) : 0;
+                        const isNewSlot = !activeEditCard;
+
                         if (activeEditCard) {
                             const oldZone = activeEditCard.closest('.drop-zone');
                             if (oldZone && oldZone !== zone) {
@@ -1836,6 +2080,13 @@ else
 
                         registerDraftEvent({ type: 'save', slotId: payload.slotId, dayOfWeek, lessonNumber });
                         updateStats();
+                        if (isNewSlot) {
+                            updateSidebarAssigned(subjectId, 1);
+                        } else if (previousSubjectId && previousSubjectId !== subjectId) {
+                            updateSidebarAssigned(previousSubjectId, -1);
+                            updateSidebarAssigned(subjectId, 1);
+                        }
+                        await refreshConflicts();
                         bootstrap.Modal.getOrCreateInstance(slotModalEl).hide();
                         showToast('Слот збережено.');
                     } catch (error) {
@@ -1854,6 +2105,7 @@ else
                     }
 
                     try {
+                        const removedSubjectId = Number(activeEditCard?.dataset.subjectId || 0);
                         await deleteSlotRequest(slotId);
                         if (activeEditCard) {
                             const zone = activeEditCard.closest('.drop-zone');
@@ -1863,6 +2115,8 @@ else
 
                         registerDraftEvent({ type: 'delete', slotId });
                         updateStats();
+                        if (removedSubjectId) updateSidebarAssigned(removedSubjectId, -1);
+                        await refreshConflicts();
                         bootstrap.Modal.getOrCreateInstance(slotModalEl).hide();
                         showToast('Слот видалено.');
                     } catch (error) {

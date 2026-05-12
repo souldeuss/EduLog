@@ -114,7 +114,15 @@
     </tbody>
 </table>
 
-<div class="offcanvas offcanvas-end" tabindex="-1" id="teacherDetailsPanel" aria-labelledby="teacherDetailsPanelLabel">
+<form id="teacherAfForm" style="display:none">@Html.AntiForgeryToken()</form>
+
+<div class="offcanvas offcanvas-end" tabindex="-1" id="teacherDetailsPanel" aria-labelledby="teacherDetailsPanelLabel"
+     style="width:520px"
+     data-absences-url="@Url.Action("GetTeacherAbsences", "Admin")"
+     data-create-absence-url="@Url.Action("CreateTeacherAbsence", "Admin")"
+     data-delete-absence-url="@Url.Action("DeleteTeacherAbsence", "Admin")"
+     data-occurrences-url="@Url.Action("GetAbsenceOccurrences", "Admin")"
+     data-set-substitute-url="@Url.Action("SetSlotSubstitution", "Admin")">
     <div class="offcanvas-header">
         <h5 class="offcanvas-title" id="teacherDetailsPanelLabel">Деталі вчителя</h5>
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
@@ -122,22 +130,78 @@
     <div class="offcanvas-body">
         <div id="teacherDetailsLoading" class="text-muted">Завантаження...</div>
         <div id="teacherDetailsContent" class="d-none">
-            <h6 class="mb-2">Особиста інформація</h6>
-            <div class="mb-3">
-                <div><strong id="detailsFullName">—</strong></div>
-                <div class="text-muted" id="detailsEmail">—</div>
-                <div class="text-muted" id="detailsPhone">—</div>
-            </div>
+            <ul class="nav nav-tabs mb-3" id="teacherDetailsTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-info-btn" data-bs-toggle="tab" data-bs-target="#tab-info" type="button" role="tab">
+                        <i class="bi bi-person"></i> Інформація
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-absence-btn" data-bs-toggle="tab" data-bs-target="#tab-absence" type="button" role="tab">
+                        <i class="bi bi-calendar-x"></i> Відсутність
+                    </button>
+                </li>
+            </ul>
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="tab-info" role="tabpanel">
+                    <h6 class="mb-2">Особиста інформація</h6>
+                    <div class="mb-3">
+                        <div><strong id="detailsFullName">—</strong></div>
+                        <div class="text-muted" id="detailsEmail">—</div>
+                        <div class="text-muted" id="detailsPhone">—</div>
+                    </div>
 
-            <h6 class="mb-2">Предмети</h6>
-            <div id="teacherSubjects" class="mb-2 d-flex flex-wrap gap-2"></div>
-            <div class="input-group input-group-sm mb-3">
-                <select id="addSubjectSelect" class="form-select"></select>
-                <button id="addSubjectBtn" class="btn btn-outline-success" type="button">+ додати</button>
-            </div>
+                    <h6 class="mb-2">Предмети</h6>
+                    <div id="teacherSubjects" class="mb-2 d-flex flex-wrap gap-2"></div>
+                    <div class="input-group input-group-sm mb-3">
+                        <select id="addSubjectSelect" class="form-select"></select>
+                        <button id="addSubjectBtn" class="btn btn-outline-success" type="button">+ додати</button>
+                    </div>
 
-            <h6 class="mb-2">Класи у розкладі</h6>
-            <div id="teacherClasses" class="d-flex flex-wrap gap-2"></div>
+                    <h6 class="mb-2">Класи у розкладі</h6>
+                    <div id="teacherClasses" class="d-flex flex-wrap gap-2"></div>
+                </div>
+                <div class="tab-pane fade" id="tab-absence" role="tabpanel">
+                    <h6 class="mb-2">Нова відсутність</h6>
+                    <form id="absenceForm" class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label form-label-sm">Тип</label>
+                            <select id="absenceType" class="form-select form-select-sm">
+                                <option value="SickLeave" selected>Лікарняний</option>
+                                <option value="Vacation">Відпустка</option>
+                                <option value="Other">Інше</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6"></div>
+                        <div class="col-md-6">
+                            <label class="form-label form-label-sm">Від</label>
+                            <input type="date" id="absenceStart" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label form-label-sm">До</label>
+                            <input type="date" id="absenceEnd" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label form-label-sm">Примітка</label>
+                            <input type="text" id="absenceNote" class="form-control form-control-sm" maxlength="500" />
+                        </div>
+                        <div class="col-12 d-flex gap-2">
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <i class="bi bi-plus-circle"></i> Створити
+                            </button>
+                            <span id="absenceFormMsg" class="small text-danger align-self-center"></span>
+                        </div>
+                    </form>
+
+                    <h6 class="mb-2">Записи</h6>
+                    <div id="absencesList" class="mb-3"></div>
+
+                    <div id="occurrencesBlock" class="d-none">
+                        <h6 class="mb-2">Уроки що потребують заміни <span id="occurrencesCount" class="badge bg-secondary"></span></h6>
+                        <div id="occurrencesList"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -530,6 +594,212 @@
                 if (response.ok) {
                     await loadTeacherDetails(currentTeacherId);
                 }
+            });
+
+            // ───────── Absences & substitutions ─────────
+            const absencesUrl = offcanvasEl?.dataset.absencesUrl || '';
+            const createAbsenceUrl = offcanvasEl?.dataset.createAbsenceUrl || '';
+            const deleteAbsenceUrl = offcanvasEl?.dataset.deleteAbsenceUrl || '';
+            const occurrencesUrl = offcanvasEl?.dataset.occurrencesUrl || '';
+            const setSubstituteUrl = offcanvasEl?.dataset.setSubstituteUrl || '';
+            const antiforgeryToken = document.querySelector('#teacherAfForm input[name="__RequestVerificationToken"]')?.value || '';
+
+            const absenceForm = document.getElementById('absenceForm');
+            const absenceType = document.getElementById('absenceType');
+            const absenceStart = document.getElementById('absenceStart');
+            const absenceEnd = document.getElementById('absenceEnd');
+            const absenceNote = document.getElementById('absenceNote');
+            const absenceFormMsg = document.getElementById('absenceFormMsg');
+            const absencesList = document.getElementById('absencesList');
+            const occurrencesBlock = document.getElementById('occurrencesBlock');
+            const occurrencesList = document.getElementById('occurrencesList');
+            const occurrencesCount = document.getElementById('occurrencesCount');
+
+            let currentAbsenceId = null;
+
+            async function loadAbsences(teacherId) {
+                if (!absencesList) return;
+                absencesList.innerHTML = '<span class="text-muted">Завантаження...</span>';
+                try {
+                    const r = await fetch(`${absencesUrl}?teacherId=${teacherId}`);
+                    const data = await r.json();
+                    renderAbsences(data.absences || []);
+                } catch {
+                    absencesList.innerHTML = '<span class="text-danger">Помилка завантаження.</span>';
+                }
+            }
+
+            function renderAbsences(absences) {
+                if (!absencesList) return;
+                if (!absences.length) {
+                    absencesList.innerHTML = '<div class="text-muted small">Записів немає.</div>';
+                    return;
+                }
+                const rows = absences.map(a => {
+                    const cov = `${a.coveredCount}/${a.overrideCount}`;
+                    return `
+                        <div class="d-flex align-items-center justify-content-between border rounded p-2 mb-1 absence-item" data-absence-id="${a.id}">
+                            <div>
+                                <div><strong>${escapeHtml(a.typeLabel)}</strong> <span class="text-muted">${escapeHtml(a.startDate)} — ${escapeHtml(a.endDate)}</span></div>
+                                <div class="small text-muted">${escapeHtml(a.note || '')}</div>
+                                <div class="small">Замін: ${cov}</div>
+                            </div>
+                            <div class="d-flex gap-1">
+                                <button type="button" class="btn btn-sm btn-outline-primary" data-load-occurrences="${a.id}"><i class="bi bi-list-check"></i></button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" data-delete-absence="${a.id}"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </div>`;
+                }).join('');
+                absencesList.innerHTML = rows;
+            }
+
+            function renderOccurrences(occurrences) {
+                if (!occurrencesBlock || !occurrencesList || !occurrencesCount) return;
+                if (!occurrences.length) {
+                    occurrencesBlock.classList.add('d-none');
+                    return;
+                }
+                occurrencesBlock.classList.remove('d-none');
+                occurrencesCount.textContent = occurrences.length;
+                const html = occurrences.map((o, idx) => {
+                    const opts = ['<option value="">— без заміни —</option>']
+                        .concat(o.availableTeachers.map(t =>
+                            `<option value="${t.id}" ${o.currentSubstituteId === t.id ? 'selected' : ''}>${escapeHtml(t.name)}</option>`));
+                    return `
+                        <div class="card mb-2 occurrence-row" data-slot-id="${o.slotId}" data-date="${o.date}">
+                            <div class="card-body p-2">
+                                <div class="d-flex justify-content-between flex-wrap">
+                                    <div>
+                                        <strong>${escapeHtml(o.dayName)}, ${escapeHtml(o.date)}</strong>
+                                        <span class="badge bg-light text-dark border">Урок ${o.lessonNumber}</span>
+                                    </div>
+                                    <div class="text-muted small">${escapeHtml(o.subjectName)} · ${escapeHtml(o.className)}${o.room ? ' · каб. ' + escapeHtml(o.room) : ''}</div>
+                                </div>
+                                <div class="d-flex gap-2 mt-2">
+                                    <select class="form-select form-select-sm substitute-select">${opts.join('')}</select>
+                                    <button type="button" class="btn btn-sm btn-primary save-substitute"><i class="bi bi-check"></i></button>
+                                    <span class="small text-success substitute-msg align-self-center"></span>
+                                </div>
+                            </div>
+                        </div>`;
+                }).join('');
+                occurrencesList.innerHTML = html;
+            }
+
+            absenceForm?.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (!currentTeacherId) return;
+                if (absenceFormMsg) absenceFormMsg.textContent = '';
+                const body = new URLSearchParams({
+                    teacherId: String(currentTeacherId),
+                    type: absenceType.value,
+                    startDate: absenceStart.value,
+                    endDate: absenceEnd.value,
+                    note: absenceNote.value || ''
+                });
+                if (antiforgeryToken) body.append('__RequestVerificationToken', antiforgeryToken);
+                try {
+                    const r = await fetch(createAbsenceUrl, {
+                        method: 'POST',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                        body: body.toString()
+                    });
+                    const text = await r.text();
+                    let payload = {};
+                    try { payload = text ? JSON.parse(text) : {}; } catch { /* keep empty */ }
+                    if (!r.ok || !payload.success) {
+                        throw new Error(payload.message || `Помилка (HTTP ${r.status})`);
+                    }
+                    currentAbsenceId = payload.absenceId;
+                    absenceNote.value = '';
+                    await loadAbsences(currentTeacherId);
+                    renderOccurrences(payload.occurrences || []);
+                } catch (err) {
+                    if (absenceFormMsg) absenceFormMsg.textContent = err.message || 'Помилка';
+                }
+            });
+
+            absencesList?.addEventListener('click', async (e) => {
+                const loadBtn = e.target.closest('[data-load-occurrences]');
+                const delBtn = e.target.closest('[data-delete-absence]');
+                if (loadBtn) {
+                    const id = Number(loadBtn.dataset.loadOccurrences);
+                    currentAbsenceId = id;
+                    try {
+                        const r = await fetch(`${occurrencesUrl}?absenceId=${id}`);
+                        const data = await r.json();
+                        renderOccurrences(data.occurrences || []);
+                    } catch { /* noop */ }
+                } else if (delBtn) {
+                    const id = Number(delBtn.dataset.deleteAbsence);
+                    if (!confirm('Видалити запис про відсутність та всі пов\'язані заміни?')) return;
+                    const body = new URLSearchParams({ id: String(id) });
+                    if (antiforgeryToken) body.append('__RequestVerificationToken', antiforgeryToken);
+                    const r = await fetch(deleteAbsenceUrl, {
+                        method: 'POST',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                        body: body.toString()
+                    });
+                    if (r.ok) {
+                        if (currentAbsenceId === id) {
+                            currentAbsenceId = null;
+                            occurrencesBlock?.classList.add('d-none');
+                        }
+                        await loadAbsences(currentTeacherId);
+                    }
+                }
+            });
+
+            occurrencesList?.addEventListener('click', async (e) => {
+                const btn = e.target.closest('.save-substitute');
+                if (!btn) return;
+                const row = btn.closest('.occurrence-row');
+                if (!row) return;
+                const slotId = row.dataset.slotId;
+                const date = row.dataset.date;
+                const select = row.querySelector('.substitute-select');
+                const msg = row.querySelector('.substitute-msg');
+                if (msg) msg.textContent = '';
+                const body = new URLSearchParams({
+                    slotId, date,
+                    substituteTeacherId: select.value || '',
+                    absenceId: currentAbsenceId ? String(currentAbsenceId) : ''
+                });
+                if (antiforgeryToken) body.append('__RequestVerificationToken', antiforgeryToken);
+                try {
+                    const r = await fetch(setSubstituteUrl, {
+                        method: 'POST',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                        body: body.toString()
+                    });
+                    const payload = await r.json();
+                    if (!r.ok || !payload.success) throw new Error(payload.message || 'Помилка');
+                    if (msg) {
+                        msg.classList.remove('text-danger');
+                        msg.classList.add('text-success');
+                        msg.textContent = 'Збережено';
+                        setTimeout(() => { msg.textContent = ''; }, 1500);
+                    }
+                    if (currentTeacherId) await loadAbsences(currentTeacherId);
+                } catch (err) {
+                    if (msg) {
+                        msg.classList.remove('text-success');
+                        msg.classList.add('text-danger');
+                        msg.textContent = err.message || 'Помилка';
+                    }
+                }
+            });
+
+            document.getElementById('tab-absence-btn')?.addEventListener('shown.bs.tab', () => {
+                if (currentTeacherId) loadAbsences(currentTeacherId);
+            });
+
+            offcanvasEl?.addEventListener('hidden.bs.offcanvas', () => {
+                currentAbsenceId = null;
+                if (occurrencesBlock) occurrencesBlock.classList.add('d-none');
+                if (absencesList) absencesList.innerHTML = '';
+                const infoTab = document.getElementById('tab-info-btn');
+                if (infoTab) bootstrap.Tab.getOrCreateInstance(infoTab).show();
             });
         })();
     </script>

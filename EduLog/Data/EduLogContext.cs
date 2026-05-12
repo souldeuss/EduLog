@@ -34,6 +34,8 @@ namespace EduLog.Data
         public DbSet<LessonMaterial> LessonMaterial { get; set; }
         public DbSet<HomeworkSubmission> HomeworkSubmission { get; set; }
         public DbSet<CoinTransaction> CoinTransaction { get; set; }
+        public DbSet<TeacherAbsence> TeacherAbsence { get; set; }
+        public DbSet<ScheduleSlotOverride> ScheduleSlotOverride { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -155,6 +157,36 @@ namespace EduLog.Data
                 .HasForeignKey(ct => ct.StudentId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            // TeacherAbsence relationships
+            modelBuilder.Entity<TeacherAbsence>()
+                .HasOne(a => a.Teacher)
+                .WithMany()
+                .HasForeignKey(a => a.TeacherId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // ScheduleSlotOverride relationships
+            modelBuilder.Entity<ScheduleSlotOverride>()
+                .HasOne(o => o.ScheduleSlot)
+                .WithMany()
+                .HasForeignKey(o => o.ScheduleSlotId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ScheduleSlotOverride>()
+                .HasOne(o => o.SubstituteTeacher)
+                .WithMany()
+                .HasForeignKey(o => o.SubstituteTeacherId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ScheduleSlotOverride>()
+                .HasOne(o => o.Absence)
+                .WithMany(a => a.Overrides)
+                .HasForeignKey(o => o.AbsenceId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<ScheduleSlotOverride>()
+                .HasIndex(o => new { o.ScheduleSlotId, o.Date })
+                .IsUnique();
+
             // Global query filters
             modelBuilder.Entity<Teacher>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
@@ -189,6 +221,10 @@ namespace EduLog.Data
             modelBuilder.Entity<HomeworkSubmission>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
             modelBuilder.Entity<CoinTransaction>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<TeacherAbsence>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<ScheduleSlotOverride>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
         }
 
