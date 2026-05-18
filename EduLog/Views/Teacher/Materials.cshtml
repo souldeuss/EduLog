@@ -64,11 +64,17 @@
 
                     <div class="mb-3">
                         <label class="form-label">Тип</label>
-                        <select name="type" class="form-select" required>
+                        <select id="materialType" name="type" class="form-select" required onchange="onMaterialTypeChange()">
                             <option value="Homework">📝 Домашнє завдання</option>
                             <option value="LessonNote">📓 Конспект уроку</option>
                             <option value="Resource">🔗 Ресурс</option>
                         </select>
+                    </div>
+
+                    <div class="mb-3" id="eduCoinRewardBlock">
+                        <label class="form-label">Нагорода EduCoin 🪙</label>
+                        <input type="number" name="eduCoinReward" value="3" min="0" max="50" class="form-control" />
+                        <small class="text-muted">Учень отримає цю кількість монет при підтвердженні виконання</small>
                     </div>
 
                     <div class="mb-3">
@@ -131,7 +137,15 @@
                             <i class="bi @TypeIcon(m.Type) text-primary"></i>
                             @m.Title
                         </h6>
-                        <span class="badge bg-secondary">@TypeLabel(m.Type)</span>
+                        <div class="d-flex align-items-center gap-1">
+                            <span class="badge bg-secondary">@TypeLabel(m.Type)</span>
+                            @if (m.Type == MaterialType.Homework)
+                            {
+                                <span class="badge bg-warning text-dark" title="Нагорода EduCoin за здачу">
+                                    🪙 @m.EduCoinReward
+                                </span>
+                            }
+                        </div>
                     </div>
                     <p class="text-muted small mb-2">
                         <i class="bi bi-calendar"></i> @m.Date.ToString("dd.MM.yyyy")
@@ -197,3 +211,14 @@
         }
     </div>
 </div>
+
+@section Scripts {
+    <script>
+        function onMaterialTypeChange() {
+            var t = document.getElementById('materialType').value;
+            var block = document.getElementById('eduCoinRewardBlock');
+            if (block) block.style.display = t === 'Homework' ? '' : 'none';
+        }
+        onMaterialTypeChange();
+    </script>
+}

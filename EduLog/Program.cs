@@ -82,6 +82,9 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped<IGamificationService, GamificationService>();
 builder.Services.AddScoped<IFileStorageService, FileStorageService>();
 
+// Adaptive homework (IRT 3PL + BKT). Сервіс без стану — реєструємо як singleton.
+builder.Services.AddSingleton<IIrtBktService, IrtBktService>();
+
 // Authorization policies
 builder.Services.AddAuthorization(options =>
 {

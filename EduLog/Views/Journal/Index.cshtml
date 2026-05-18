@@ -1,4 +1,5 @@
-﻿@model EduLog.Models.JournalView
+@model EduLog.Models.JournalView
+@using EduLog.Models
 @{
     var today = DateTime.Today;
     var allClasses = ViewBag.AllClasses as List<Class> ?? new List<Class>();
@@ -8,8 +9,44 @@
     string viewMode = ViewBag.ViewMode;
     string[] monthNames = { "Січень","Лютий","Березень","Квітень","Травень","Червень",
                             "Липень","Серпень","Вересень","Жовтень","Листопад","Грудень" };
+
+    var scaleType = Model.Scale?.ScaleType ?? ScaleType.Numeric;
+    var scaleMin = Model.Scale?.MinValue ?? 1;
+    var scaleMax = Model.Scale?.MaxValue ?? 12;
+    var verbalOptions = Model.VerbalOptions;
+    string placeholder = scaleType switch
+    {
+        ScaleType.Percent => "0–100",
+        ScaleType.Numeric => $"{scaleMin}–{scaleMax}",
+        _ => ""
+    };
+
+    var selectedDay = ViewBag.SelectedDay as DateTime?;
+    var weekStart = ViewBag.WeekStart as DateTime?;
+    var prevDay = ViewBag.PrevDay as DateTime?;
+    var nextDay = ViewBag.NextDay as DateTime?;
+    var prevWeekStart = ViewBag.PrevWeekStart as DateTime?;
+    var nextWeekStart = ViewBag.NextWeekStart as DateTime?;
+    string[] dayNamesUk = { "Неділя", "Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота" };
 }
-<
+
+<style>
+    .journal-scroll {
+        overflow-x: auto;
+    }
+    .journal-scroll > table {
+        width: auto;
+    }
+    .journal-scroll th,
+    .journal-scroll td {
+        min-width: 80px;
+    }
+    .journal-scroll th.sticky-col,
+    .journal-scroll td.sticky-col {
+        min-width: 180px;
+    }
+</style>
+
 <h1>Журнал: @Model.Class.Name (@Model.Subject.Name)</h1>
 
 <link rel="stylesheet" href="~/css/Journal.css" asp-append-version="true" />
@@ -18,15 +55,15 @@
     <h4 class="mb-0 me-3">Журнал:</h4>
     <select id="classSwitcher" class="form-select form-select-sm" style="width:auto;">
         @foreach (var c in allClasses)
-    {
+        {
             <option value="@c.Id" selected="@(c.Id == Model.Class?.Id)">@c.Name</option>
-    }
+        }
     </select>
     <select id="subjectSwitcher" class="form-select form-select-sm" style="width:auto;">
         @foreach (var s in subjectsForClass)
-    {
+        {
             <option value="@s.Id" selected="@(s.Id == Model.Subject?.Id)">@s.Name</option>
-    }
+        }
     </select>
     <a class="btn btn-outline-primary btn-sm ms-auto"
        asp-controller="Teacher" asp-action="Materials"
@@ -38,27 +75,39 @@
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
     <div class="btn-group" role="group">
         @foreach (var m in new[] { ("day", "День", "bi-calendar-date"), ("week", "Тиждень", "bi-5-square"), ("month", "Місяць", "bi-calendar3") })
-    {
+        {
             if (viewMode == m.Item1)
             {
                 <button type="button" class="btn btn-primary btn-sm active" disabled>
                     @m.Item2 <i class="bi @m.Item3"></i>
                 </button>
-    }
-    else
-    {
+            }
+            else
+            {
                 <a class="btn btn-outline-primary btn-sm"
-           asp-action="Index"
-           asp-route-classId="@Model.Class.Id"
-           asp-route-subjectId="@Model.Subject.Id"
+                   asp-action="Index"
+                   asp-route-classId="@Model.Class.Id"
+                   asp-route-subjectId="@Model.Subject.Id"
                    asp-route-viewMode="@m.Item1"
                    asp-route-month="@selMonth"
                    asp-route-year="@selYear">
                     @m.Item2 <i class="bi @m.Item3"></i>
-        </a>
-    }
+                </a>
+            }
         }
     </div>
+
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#scaleModal">
+        <i class="bi bi-gear-fill"></i> Шкала оцінок
+        <span class="badge bg-light text-dark ms-1">
+            @(scaleType switch {
+                ScaleType.Numeric => $"Numeric {scaleMin}–{scaleMax}",
+                ScaleType.Percent => "Percent 0–100",
+                ScaleType.Verbal => "Verbal",
+                _ => ""
+            })
+        </span>
+    </button>
 
     @if (viewMode == "month")
     {
@@ -72,7 +121,7 @@
                asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
                asp-route-viewMode="month" asp-route-month="@prevMonth" asp-route-year="@prevYear">
                 <i class="bi bi-chevron-left"></i>
-        </a>
+            </a>
             <strong>@monthNames[selMonth - 1] @selYear</strong>
             <a class="btn btn-outline-secondary btn-sm"
                asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
@@ -83,7 +132,94 @@
     }
 </div>
 
-<div class="table-responsive">
+@if (viewMode == "day" && selectedDay.HasValue)
+{
+    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+        <a class="btn btn-outline-secondary btn-sm"
+           asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
+           asp-route-viewMode="day"
+           asp-route-year="@prevDay?.Year" asp-route-month="@prevDay?.Month" asp-route-day="@prevDay?.Day">
+            <i class="bi bi-chevron-left"></i> Попередній
+        </a>
+        <strong class="px-2">
+            @selectedDay.Value.ToString("dd.MM.yyyy")
+            <span class="text-muted small">(@dayNamesUk[(int)selectedDay.Value.DayOfWeek])</span>
+        </strong>
+        <a class="btn btn-outline-secondary btn-sm"
+           asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
+           asp-route-viewMode="day"
+           asp-route-year="@nextDay?.Year" asp-route-month="@nextDay?.Month" asp-route-day="@nextDay?.Day">
+            Наступний <i class="bi bi-chevron-right"></i>
+        </a>
+        <a class="btn btn-outline-primary btn-sm ms-2"
+           asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
+           asp-route-viewMode="day">
+            <i class="bi bi-calendar-check"></i> Сьогодні
+        </a>
+    </div>
+}
+else if (viewMode == "week" && weekStart.HasValue)
+{
+    var wsEnd = weekStart.Value.AddDays(4);
+    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+        <a class="btn btn-outline-secondary btn-sm"
+           asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
+           asp-route-viewMode="week"
+           asp-route-weekStart="@prevWeekStart?.ToString("yyyy-MM-dd")">
+            <i class="bi bi-chevron-left"></i> Попередній
+        </a>
+        <strong class="px-2">
+            @weekStart.Value.ToString("dd.MM") – @wsEnd.ToString("dd.MM.yyyy")
+        </strong>
+        <a class="btn btn-outline-secondary btn-sm"
+           asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
+           asp-route-viewMode="week"
+           asp-route-weekStart="@nextWeekStart?.ToString("yyyy-MM-dd")">
+            Наступний <i class="bi bi-chevron-right"></i>
+        </a>
+        <a class="btn btn-outline-primary btn-sm ms-2"
+           asp-action="Index" asp-route-classId="@Model.Class.Id" asp-route-subjectId="@Model.Subject.Id"
+           asp-route-viewMode="week">
+            <i class="bi bi-calendar-check"></i> Поточний тиждень
+        </a>
+    </div>
+}
+
+@functions {
+    string RenderCellInput(int studentId, string date, string? value, int? customColumnId,
+                           ScaleType type, List<string> opts, string placeholder)
+    {
+        var customAttr = customColumnId.HasValue ? $"data-custom-column=\"{customColumnId.Value}\"" : "";
+        var safeVal = System.Net.WebUtility.HtmlEncode(value ?? "");
+        if (type == ScaleType.Verbal)
+        {
+            var options = string.Join("", opts.Select(o =>
+            {
+                var enc = System.Net.WebUtility.HtmlEncode(o);
+                var sel = (value == o) ? "selected" : "";
+                return $"<option value=\"{enc}\" {sel}>{enc}</option>";
+            }));
+            var nSel = value == "Н" ? "selected" : "";
+            return $@"<select class=""form-select form-select-sm journal-cell""
+                              data-student=""{studentId}"" data-date=""{date}"" data-type=""grade"" {customAttr}
+                              onchange=""saveCell(this)""
+                              style=""width:auto; min-width:100px;"">
+                        <option value=""""></option>
+                        {options}
+                        <option value=""Н"" {nSel}>Н</option>
+                     </select>";
+        }
+        return $@"<input type=""text""
+                         class=""form-control form-control-sm text-center journal-cell""
+                         value=""{safeVal}""
+                         placeholder=""{placeholder}""
+                         data-student=""{studentId}"" data-date=""{date}"" data-type=""grade"" {customAttr}
+                         onchange=""saveCell(this)""
+                         style=""width: 60px; display: inline-block;"" />";
+    }
+}
+
+<div class="table-responsive journal-scroll">
     <table class="table table-bordered align-middle text-center">
         <thead>
             <tr>
@@ -94,7 +230,48 @@
                         @day.ToString("ddd")<br />@day.ToString("dd.MM")
                     </th>
                 }
+                @foreach (var col in Model.CustomColumns)
+                {
+                    <th class="table-info custom-col-header" title="@col.Name @col.Date.ToString("dd.MM.yyyy")">
+                        <div class="d-flex align-items-center justify-content-center gap-1">
+                            <i class="bi bi-pencil-square"></i>
+                            <span class="fw-semibold">@col.Name</span>
+                            <button type="button"
+                                    class="btn btn-sm btn-link text-danger p-0 ms-1 custom-col-delete"
+                                    title="Видалити колонку"
+                                    data-column-id="@col.Id"
+                                    onclick="deleteCustomColumn(@col.Id, this)">
+                                <i class="bi bi-x-circle"></i>
+                            </button>
+                        </div>
+                        <div class="small text-muted">@col.Date.ToString("dd.MM")</div>
+                    </th>
+                }
+                <th class="table-success p-1">
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="toggleAddColumnForm()">
+                        <i class="bi bi-plus-lg"></i> Додати колонку
+                    </button>
+                </th>
                 <th class="table-warning">Сер.</th>
+            </tr>
+            <tr id="addColumnFormRow" style="display:none;">
+                <th colspan="@(1 + Model.Days.Count + Model.CustomColumns.Count)" class="text-end">
+                    <span class="text-muted small">Нова колонка:</span>
+                </th>
+                <th colspan="2" class="p-2 bg-light">
+                    <div class="d-flex gap-1 align-items-center justify-content-center flex-wrap">
+                        <input type="text" id="newColumnName" class="form-control form-control-sm"
+                               placeholder="Назва (напр. Контрольна)" style="width:180px;" />
+                        <input type="date" id="newColumnDate" class="form-control form-control-sm"
+                               value="@today.ToString("yyyy-MM-dd")" style="width:140px;" />
+                        <button type="button" class="btn btn-sm btn-success" onclick="saveCustomColumn()">
+                            <i class="bi bi-check-lg"></i> Зберегти
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAddColumnForm()">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </th>
             </tr>
         </thead>
         <tbody>
@@ -107,50 +284,105 @@
                         var cellVal = Model.GetCellValue(student.Id, day, Model.Subject.Id);
                         var isAbsence = cellVal == "Н";
                         <td class="p-0 @(isAbsence ? "table-danger" : "")">
-                            <input type="text"
-                                   class="form-control form-control-sm text-center journal-cell"
-                                   value="@cellVal"
-                                   data-student="@student.Id"
-                                   data-date="@day.ToString("yyyy-MM-dd")"
-                                   data-type="grade"
-                                   onchange="saveCell(this)"
-                                   style="width: 50px; display: inline-block;" />
-                            @*<input type="checkbox"
-                                title="Відмітити відсутність"
-                                data-student="@student.Id"
-                                data-date="@day.ToString("yyyy-MM-dd")"
-                                data-type="absence"
-                                onchange="saveCell(this)"
-                                @(absence != null ? "checked" : "") />*@
+                            @Html.Raw(RenderCellInput(student.Id, day.ToString("yyyy-MM-dd"), cellVal, null,
+                                scaleType, verbalOptions, placeholder))
                         </td>
                     }
-                    @{
-                        var studentGrades = Model.Grades?.Where(g => g.StudentId == student.Id && g.Value > 0).ToList();
-                        var avg = studentGrades != null && studentGrades.Any() ? studentGrades.Average(g => g.Value) : 0;
+                    @foreach (var col in Model.CustomColumns)
+                    {
+                        var cellVal = Model.GetCustomCellValue(student.Id, col.Id);
+                        <td class="p-0 table-info-subtle">
+                            @Html.Raw(RenderCellInput(student.Id, col.Date.ToString("yyyy-MM-dd"), cellVal, col.Id,
+                                scaleType, verbalOptions, placeholder))
+                        </td>
                     }
-                    <td class="table-warning fw-bold">@(avg > 0 ? avg.ToString("0.0") : "—")</td>
+                    <td class="bg-light text-muted small">—</td>
+                    <td class="table-warning fw-bold">@Model.GetAverageDisplay(student.Id)</td>
                 </tr>
             }
         </tbody>
     </table>
 </div>
 
-
+<!-- Grade Scale settings modal -->
+<div class="modal fade" id="scaleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-gear-fill"></i> Шкала оцінок</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Тип шкали</label>
+                    <select id="scaleTypeSelect" class="form-select" onchange="onScaleTypeChange()">
+                        <option value="0">Числова (Min–Max)</option>
+                        <option value="1">Вербальна (текстові варіанти)</option>
+                        <option value="2">Відсоткова (0–100)</option>
+                    </select>
+                </div>
+                <div id="numericFields" class="row g-2 mb-3">
+                    <div class="col">
+                        <label class="form-label">Min</label>
+                        <input type="number" id="scaleMin" class="form-control" value="1" />
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Max</label>
+                        <input type="number" id="scaleMax" class="form-control" value="12" />
+                    </div>
+                </div>
+                <div id="verbalFields" class="mb-3" style="display:none;">
+                    <label class="form-label">Варіанти (через кому або по рядку)</label>
+                    <textarea id="scaleVerbal" class="form-control" rows="4"
+                              placeholder="Відмінно, Добре, Задовільно, Незадовільно"></textarea>
+                </div>
+                <div id="percentNote" class="alert alert-info py-2" style="display:none;">
+                    Відсоткова шкала фіксована: 0–100.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                <button type="button" class="btn btn-primary" onclick="saveGradeScale()">Зберегти</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 @section Scripts
 {
     <script>
-        function saveCell(input) {
-            var val = input.value.trim();
+        const SCALE_TYPE = @((int)scaleType);
+        const SCALE_MIN = @scaleMin;
+        const SCALE_MAX = @scaleMax;
+        const VERBAL_OPTIONS = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(verbalOptions));
+        const HAS_SCALE = @((Model.Scale != null).ToString().ToLower());
 
-            // Client-side validation: empty, 1-12, or Н/н
-            if (val !== '' && val.toUpperCase() !== 'Н') {
-                var num = parseInt(val);
-                if (isNaN(num) || num < 1 || num > 12) {
-                    alert('Допустимі значення: 1-12 або Н');
-                    input.value = input.defaultValue;
-                    return;
+        function validateClient(val) {
+            if (val === '' || val.toUpperCase() === 'Н') return null;
+            if (SCALE_TYPE === 1) {
+                if (!VERBAL_OPTIONS.includes(val)) {
+                    return 'Допустимі: ' + (VERBAL_OPTIONS.join(', ') || '(порожньо)') + ' або Н';
                 }
+            } else if (SCALE_TYPE === 2) {
+                const n = parseInt(val);
+                if (isNaN(n) || n < 0 || n > 100) return 'Допустимі значення: 0–100 або Н';
+            } else {
+                const n = parseInt(val);
+                if (isNaN(n) || n < SCALE_MIN || n > SCALE_MAX) {
+                    return 'Допустимі значення: ' + SCALE_MIN + '–' + SCALE_MAX + ' або Н';
+                }
+            }
+            return null;
+        }
+
+        function saveCell(input) {
+            var val = (input.value || '').trim();
+
+            var clientError = validateClient(val);
+            if (clientError) {
+                alert(clientError);
+                input.value = input.defaultValue;
+                return;
             }
 
             let data = {
@@ -160,20 +392,21 @@
                 type: input.dataset.type,
                 value: val
             };
+            if (input.dataset.customColumn) {
+                data.customColumnId = parseInt(input.dataset.customColumn);
+            }
             fetch('@Url.Action("SaveCell", "Journal")', {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data)
             }).then(function(r) {
                 if (!r.ok) {
+                    r.json().then(b => alert(b && b.error ? b.error : 'Невірне значення')).catch(() => alert('Невірне значення'));
                     input.value = input.defaultValue;
-                    alert('Допустимі значення: 1-12 або Н');
                     return;
                 }
-                // Update cell appearance
                 var td = input.parentElement;
                 if (val.toUpperCase() === 'Н') {
-                    input.value = 'Н';
                     td.classList.add('table-danger');
                 } else {
                     td.classList.remove('table-danger');
@@ -181,12 +414,96 @@
             });
         }
 
+        function toggleAddColumnForm() {
+            var row = document.getElementById('addColumnFormRow');
+            row.style.display = row.style.display === 'none' ? '' : 'none';
+            if (row.style.display !== 'none') {
+                document.getElementById('newColumnName').focus();
+            }
+        }
+
+        function saveCustomColumn() {
+            var name = document.getElementById('newColumnName').value.trim();
+            var date = document.getElementById('newColumnDate').value;
+            if (!name) { alert('Введіть назву колонки.'); return; }
+            if (!date) { alert('Оберіть дату.'); return; }
+
+            var fd = new FormData();
+            fd.append('classId', '@Model.Class.Id');
+            fd.append('subjectId', '@Model.Subject.Id');
+            fd.append('name', name);
+            fd.append('date', date);
+
+            fetch('@Url.Action("CreateCustomColumn", "Journal")', { method: 'POST', body: fd })
+                .then(r => r.ok ? r.json() : Promise.reject(r))
+                .then(res => { if (res && res.success) window.location.reload(); })
+                .catch(() => alert('Не вдалося створити колонку.'));
+        }
+
+        function deleteCustomColumn(columnId, btn) {
+            if (!confirm('Видалити колонку та всі її оцінки?')) return;
+            var fd = new FormData();
+            fd.append('columnId', columnId);
+            fetch('@Url.Action("DeleteCustomColumn", "Journal")', { method: 'POST', body: fd })
+                .then(r => r.ok ? r.json() : Promise.reject(r))
+                .then(res => { if (res && res.success) window.location.reload(); })
+                .catch(() => alert('Не вдалося видалити колонку.'));
+        }
+
+        function onScaleTypeChange() {
+            var t = parseInt(document.getElementById('scaleTypeSelect').value);
+            document.getElementById('numericFields').style.display = t === 0 ? '' : 'none';
+            document.getElementById('verbalFields').style.display = t === 1 ? '' : 'none';
+            document.getElementById('percentNote').style.display = t === 2 ? '' : 'none';
+        }
+
+        function saveGradeScale() {
+            var t = parseInt(document.getElementById('scaleTypeSelect').value);
+            var fd = new FormData();
+            fd.append('classId', '@Model.Class.Id');
+            fd.append('subjectId', '@Model.Subject.Id');
+            fd.append('scaleType', t);
+            if (t === 0) {
+                fd.append('minValue', document.getElementById('scaleMin').value);
+                fd.append('maxValue', document.getElementById('scaleMax').value);
+            } else if (t === 1) {
+                fd.append('verbalOptionsRaw', document.getElementById('scaleVerbal').value);
+            }
+            fetch('@Url.Action("GradeScaleSettings", "Journal")', { method: 'POST', body: fd })
+                .then(r => r.ok ? r.json() : r.json().then(b => Promise.reject(b)))
+                .then(res => { if (res && res.success) window.location.reload(); })
+                .catch(err => alert(err && err.error ? err.error : 'Не вдалося зберегти шкалу.'));
+        }
+
+        // Init modal with current values
+        (function initScaleModal() {
+            document.getElementById('scaleTypeSelect').value = SCALE_TYPE;
+            document.getElementById('scaleMin').value = SCALE_MIN;
+            document.getElementById('scaleMax').value = SCALE_MAX;
+            document.getElementById('scaleVerbal').value = VERBAL_OPTIONS.join('\n');
+            onScaleTypeChange();
+        })();
+
         function navigateJournal() {
             var classId = document.getElementById('classSwitcher').value;
             var subjectId = document.getElementById('subjectSwitcher').value;
-            window.location.href = '@Url.Action("Index", "Journal")' +
-                '?classId=' + classId + '&subjectId=' + subjectId +
-                '&viewMode=@viewMode&month=@selMonth&year=@selYear';
+            var url = '@Url.Action("Index", "Journal")'
+                + '?classId=' + classId
+                + '&subjectId=' + subjectId
+                + '&viewMode=@viewMode';
+            @if (viewMode == "month")
+            {
+                <text>url += '&month=@selMonth&year=@selYear';</text>
+            }
+            else if (viewMode == "day" && selectedDay.HasValue)
+            {
+                <text>url += '&year=@selectedDay.Value.Year&month=@selectedDay.Value.Month&day=@selectedDay.Value.Day';</text>
+            }
+            else if (viewMode == "week" && weekStart.HasValue)
+            {
+                <text>url += '&weekStart=@weekStart.Value.ToString("yyyy-MM-dd")';</text>
+            }
+            window.location.href = url;
         }
 
         document.getElementById('subjectSwitcher').addEventListener('change', navigateJournal);

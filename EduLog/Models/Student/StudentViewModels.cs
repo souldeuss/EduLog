@@ -57,7 +57,8 @@ namespace EduLog.Models.StudentArea
     {
         public int SubjectId { get; set; }
         public string SubjectName { get; set; } = string.Empty;
-        public int Value { get; set; }
+        public int? Value { get; set; }
+        public string? VerbalValue { get; set; }
         public DateTime Date { get; set; }
     }
 

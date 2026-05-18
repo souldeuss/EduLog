@@ -229,9 +229,9 @@ namespace EduLog.Services
         {
             var modes = new List<SchedulerModeInfo>
             {
-                new() { Mode = SchedulerMode.Balanced, Name = "Balanced", Description = "Balanced distribution across classes and teachers." },
-                new() { Mode = SchedulerMode.Dense, Name = "Dense", Description = "Favors compact timetables with fewer gaps." },
-                new() { Mode = SchedulerMode.Append, Name = "Append", Description = "Preserves existing slots and appends new ones." },
+                new() { Mode = SchedulerMode.Balanced, Name = "Збалансований", Description = "Рівномірно розподіляє навантаження між класами та вчителями." },
+                new() { Mode = SchedulerMode.Dense, Name = "Щільний", Description = "Створює компактний розклад без \"вікон\" між уроками." },
+                new() { Mode = SchedulerMode.Append, Name = "Доповнення", Description = "Зберігає вже наявні слоти й додає лише відсутні." },
             };
 
             return Task.FromResult(modes);

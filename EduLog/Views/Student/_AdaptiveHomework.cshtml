@@ -1,0 +1,157 @@
+@*
+    Часткове представлення для адаптивного ДЗ.
+    Параметр моделі — Id LessonMaterial (типу Homework), для якого запускається сесія.
+*@
+@model int
+
+@{
+    var lessonMaterialId = Model;
+    var blockId = $"adaptive-{lessonMaterialId}";
+}
+
+<div id="@blockId" class="adaptive-homework card p-3" data-lesson-material-id="@lessonMaterialId">
+    <h5 class="mb-3">Адаптивне домашнє завдання</h5>
+
+    <div class="adaptive-progress mb-3">
+        <div class="d-flex justify-content-between small">
+            <span>Засвоєння теми</span>
+            <span class="adaptive-progress-label">0%</span>
+        </div>
+        <div class="progress" style="height: 16px;">
+            <div class="progress-bar adaptive-progress-bar bg-success" role="progressbar"
+                 style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+    </div>
+
+    <div class="adaptive-question mb-3">
+        <p class="adaptive-question-text fst-italic text-muted">Натисніть «Почати», щоб отримати перше питання.</p>
+        <div class="adaptive-hint alert alert-info d-none" role="alert"></div>
+    </div>
+
+    <div class="adaptive-controls d-flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-primary adaptive-start-btn">Почати</button>
+        <button type="button" class="btn btn-success adaptive-correct-btn d-none" data-correct="true">Я відповів правильно</button>
+        <button type="button" class="btn btn-outline-secondary adaptive-wrong-btn d-none" data-correct="false">Не зміг відповісти</button>
+    </div>
+
+    <div class="adaptive-complete alert alert-success mt-3 d-none" role="alert">
+        Сесію завершено. Поточний рівень засвоєння: <strong class="adaptive-complete-pl">0%</strong>.
+    </div>
+</div>
+
+@* Anti-forgery token — використовується AJAX-запитами до StudentController. *@
+@Html.AntiForgeryToken()
+
+<script>
+(function () {
+    const root = document.getElementById('@blockId');
+    if (!root) return;
+
+    const lessonMaterialId = parseInt(root.dataset.lessonMaterialId, 10);
+    const questionTextEl = root.querySelector('.adaptive-question-text');
+    const hintEl = root.querySelector('.adaptive-hint');
+    const progressBar = root.querySelector('.adaptive-progress-bar');
+    const progressLabel = root.querySelector('.adaptive-progress-label');
+    const startBtn = root.querySelector('.adaptive-start-btn');
+    const correctBtn = root.querySelector('.adaptive-correct-btn');
+    const wrongBtn = root.querySelector('.adaptive-wrong-btn');
+    const completeBox = root.querySelector('.adaptive-complete');
+    const completePl = root.querySelector('.adaptive-complete-pl');
+
+    // CSRF-токен видається @Html.AntiForgeryToken() — це прихований input у формі-обгортці.
+    function getAntiForgeryToken() {
+        const el = document.querySelector('input[name="__RequestVerificationToken"]');
+        return el ? el.value : '';
+    }
+
+    let state = { sessionId: null, questionId: null };
+
+    function setProgress(pLearned) {
+        const pct = Math.round((pLearned || 0) * 100);
+        progressBar.style.width = pct + '%';
+        progressBar.setAttribute('aria-valuenow', pct);
+        progressLabel.textContent = pct + '%';
+        // Колір прогресу симетрично до Excel-звіту.
+        progressBar.classList.remove('bg-success', 'bg-warning', 'bg-danger');
+        if (pct >= 80) progressBar.classList.add('bg-success');
+        else if (pct >= 40) progressBar.classList.add('bg-warning');
+        else progressBar.classList.add('bg-danger');
+    }
+
+    function renderHint(hint) {
+        if (hint) {
+            hintEl.textContent = 'Підказка: ' + hint;
+            hintEl.classList.remove('d-none');
+        } else {
+            hintEl.classList.add('d-none');
+            hintEl.textContent = '';
+        }
+    }
+
+    function showAnswerButtons(visible) {
+        correctBtn.classList.toggle('d-none', !visible);
+        wrongBtn.classList.toggle('d-none', !visible);
+    }
+
+    function applyResponse(data) {
+        setProgress(data.pLearned);
+
+        if (data.isComplete || !data.nextQuestion) {
+            questionTextEl.textContent = 'Питання вичерпано.';
+            renderHint(null);
+            showAnswerButtons(false);
+            completePl.textContent = Math.round((data.pLearned || 0) * 100) + '%';
+            completeBox.classList.remove('d-none');
+            return;
+        }
+
+        state.questionId = data.nextQuestion.id;
+        questionTextEl.textContent = data.nextQuestion.text;
+        renderHint(data.hint);
+        showAnswerButtons(true);
+        completeBox.classList.add('d-none');
+    }
+
+    async function postJson(url, body) {
+        const form = new FormData();
+        Object.entries(body).forEach(([k, v]) => form.append(k, v));
+        form.append('__RequestVerificationToken', getAntiForgeryToken());
+
+        const resp = await fetch(url, { method: 'POST', body: form, credentials: 'same-origin' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+    }
+
+    startBtn.addEventListener('click', async () => {
+        startBtn.disabled = true;
+        try {
+            const data = await postJson('/Student/StartAdaptiveSession', { lessonMaterialId });
+            state.sessionId = data.sessionId;
+            applyResponse(data);
+            startBtn.classList.add('d-none');
+        } catch (e) {
+            questionTextEl.textContent = 'Помилка запуску сесії: ' + e.message;
+            startBtn.disabled = false;
+        }
+    });
+
+    async function submitAnswer(isCorrect) {
+        if (!state.sessionId || !state.questionId) return;
+        showAnswerButtons(false);
+        try {
+            const data = await postJson('/Student/SubmitAdaptiveAnswer', {
+                sessionId: state.sessionId,
+                questionId: state.questionId,
+                isCorrect: isCorrect
+            });
+            applyResponse(data);
+        } catch (e) {
+            questionTextEl.textContent = 'Помилка: ' + e.message;
+            showAnswerButtons(true);
+        }
+    }
+
+    correctBtn.addEventListener('click', () => submitAnswer(true));
+    wrongBtn.addEventListener('click', () => submitAnswer(false));
+})();
+</script>

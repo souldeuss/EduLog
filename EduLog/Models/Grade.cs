@@ -11,6 +11,9 @@ namespace EduLog.Models
         public int StudentId { get; set; }
         public int SubjectId { get; set; }
         public DateTime Date { get; set; }
-        public int Value { get; set; } // 1-12
+        public int? Value { get; set; }
+        public string? VerbalValue { get; set; }
+
+        public int? CustomGradeColumnId { get; set; }
     }
 }

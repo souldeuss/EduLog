@@ -4,6 +4,7 @@ using EduLog.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EduLog.Migrations
 {
     [DbContext(typeof(EduLogContext))]
-    partial class EduLogContextModelSnapshot : ModelSnapshot
+    [Migration("20260512233741_AddGradeScale")]
+    partial class AddGradeScale
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -83,75 +86,6 @@ namespace EduLog.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("AcademicYear");
-                });
-
-            modelBuilder.Entity("EduLog.Models.AdaptiveAnswer", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("AnsweredAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsCorrect")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("QuestionId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SchoolId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SessionId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionId");
-
-                    b.HasIndex("SessionId");
-
-                    b.ToTable("AdaptiveAnswer");
-                });
-
-            modelBuilder.Entity("EduLog.Models.AdaptiveSession", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("CurrentQuestionId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("LessonMaterialId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SchoolId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("StudentId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CurrentQuestionId");
-
-                    b.HasIndex("LessonMaterialId");
-
-                    b.HasIndex("StudentId");
-
-                    b.ToTable("AdaptiveSession");
                 });
 
             modelBuilder.Entity("EduLog.Models.ApplicationUser", b =>
@@ -560,9 +494,6 @@ namespace EduLog.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("EduCoinReward")
-                        .HasColumnType("int");
-
                     b.Property<int>("SchoolId")
                         .HasColumnType("int");
 
@@ -583,47 +514,6 @@ namespace EduLog.Migrations
                     b.HasIndex("ClassSubjectClassId", "ClassSubjectSubjectId");
 
                     b.ToTable("LessonMaterial");
-                });
-
-            modelBuilder.Entity("EduLog.Models.QuestionItem", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("HintText")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<double>("IrtA")
-                        .HasColumnType("float");
-
-                    b.Property<double>("IrtB")
-                        .HasColumnType("float");
-
-                    b.Property<double>("IrtC")
-                        .HasColumnType("float");
-
-                    b.Property<int>("SchoolId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SubjectId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("TopicTag")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SubjectId", "TopicTag");
-
-                    b.ToTable("QuestionItem");
                 });
 
             modelBuilder.Entity("EduLog.Models.Room", b =>
@@ -839,43 +729,6 @@ namespace EduLog.Migrations
                     b.HasIndex("ClassId");
 
                     b.ToTable("Student");
-                });
-
-            modelBuilder.Entity("EduLog.Models.StudentKnowledgeState", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<double>("ProbabilityLearned")
-                        .HasColumnType("float");
-
-                    b.Property<int>("SchoolId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("StudentId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SubjectId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("TopicTag")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SubjectId");
-
-                    b.HasIndex("StudentId", "SubjectId", "TopicTag")
-                        .IsUnique();
-
-                    b.ToTable("StudentKnowledgeState");
                 });
 
             modelBuilder.Entity("EduLog.Models.Subject", b =>
@@ -1161,51 +1014,6 @@ namespace EduLog.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("EduLog.Models.AdaptiveAnswer", b =>
-                {
-                    b.HasOne("EduLog.Models.QuestionItem", "Question")
-                        .WithMany()
-                        .HasForeignKey("QuestionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("EduLog.Models.AdaptiveSession", "Session")
-                        .WithMany("Answers")
-                        .HasForeignKey("SessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Question");
-
-                    b.Navigation("Session");
-                });
-
-            modelBuilder.Entity("EduLog.Models.AdaptiveSession", b =>
-                {
-                    b.HasOne("EduLog.Models.QuestionItem", "CurrentQuestion")
-                        .WithMany()
-                        .HasForeignKey("CurrentQuestionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("EduLog.Models.LessonMaterial", "LessonMaterial")
-                        .WithMany()
-                        .HasForeignKey("LessonMaterialId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EduLog.Models.Student", "Student")
-                        .WithMany()
-                        .HasForeignKey("StudentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CurrentQuestion");
-
-                    b.Navigation("LessonMaterial");
-
-                    b.Navigation("Student");
-                });
-
             modelBuilder.Entity("EduLog.Models.ApplicationUser", b =>
                 {
                     b.HasOne("EduLog.Models.School", "School")
@@ -1331,17 +1139,6 @@ namespace EduLog.Migrations
                     b.Navigation("Teacher");
                 });
 
-            modelBuilder.Entity("EduLog.Models.QuestionItem", b =>
-                {
-                    b.HasOne("EduLog.Models.Subject", "Subject")
-                        .WithMany()
-                        .HasForeignKey("SubjectId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Subject");
-                });
-
             modelBuilder.Entity("EduLog.Models.ScheduleSlot", b =>
                 {
                     b.HasOne("EduLog.Models.AcademicYear", "AcademicYear")
@@ -1418,25 +1215,6 @@ namespace EduLog.Migrations
                     b.Navigation("ApplicationUser");
 
                     b.Navigation("Class");
-                });
-
-            modelBuilder.Entity("EduLog.Models.StudentKnowledgeState", b =>
-                {
-                    b.HasOne("EduLog.Models.Student", "Student")
-                        .WithMany()
-                        .HasForeignKey("StudentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("EduLog.Models.Subject", "Subject")
-                        .WithMany()
-                        .HasForeignKey("SubjectId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Student");
-
-                    b.Navigation("Subject");
                 });
 
             modelBuilder.Entity("EduLog.Models.Subject", b =>
@@ -1555,11 +1333,6 @@ namespace EduLog.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("EduLog.Models.AdaptiveSession", b =>
-                {
-                    b.Navigation("Answers");
                 });
 
             modelBuilder.Entity("EduLog.Models.ApplicationUser", b =>

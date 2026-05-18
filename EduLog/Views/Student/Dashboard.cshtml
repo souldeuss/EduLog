@@ -218,12 +218,15 @@
                                 <tbody>
                                     @foreach (var g in Model.RecentGrades)
                                     {
-                                        string colorClass = g.Value >= 10 ? "bg-success" :
-                                                           (g.Value >= 7 ? "bg-primary" :
-                                                           (g.Value >= 4 ? "bg-warning text-dark" : "bg-danger"));
+                                        var numeric = g.Value ?? 0;
+                                        string colorClass = !string.IsNullOrEmpty(g.VerbalValue) ? "bg-info text-dark" :
+                                                           numeric >= 10 ? "bg-success" :
+                                                           (numeric >= 7 ? "bg-primary" :
+                                                           (numeric >= 4 ? "bg-warning text-dark" : "bg-danger"));
+                                        var display = !string.IsNullOrEmpty(g.VerbalValue) ? g.VerbalValue : (g.Value?.ToString() ?? "—");
                                         <tr>
                                             <td><strong>@g.SubjectName</strong></td>
-                                            <td><span class="badge @colorClass" style="font-size: 0.95rem;">@g.Value</span></td>
+                                            <td><span class="badge @colorClass" style="font-size: 0.95rem;">@display</span></td>
                                             <td class="text-muted small">@g.Date.ToString("dd.MM.yyyy")</td>
                                         </tr>
                                     }

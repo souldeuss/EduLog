@@ -22,17 +22,25 @@ namespace EduLog.Controllers
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IGamificationService _gamification;
         private readonly IFileStorageService _fileStorage;
+        private readonly IIrtBktService _irtBkt;
+
+        // Стоп-критерії для адаптивної сесії.
+        private const double AdaptiveMasteryThreshold = 0.8;
+        private const int AdaptiveMaxQuestions = 10;
+        private const double AdaptiveHintThreshold = 0.4;
 
         public StudentController(
             EduLogContext context,
             UserManager<ApplicationUser> userManager,
             IGamificationService gamification,
-            IFileStorageService fileStorage)
+            IFileStorageService fileStorage,
+            IIrtBktService irtBkt)
         {
             _context = context;
             _userManager = userManager;
             _gamification = gamification;
             _fileStorage = fileStorage;
+            _irtBkt = irtBkt;
         }
 
         // ───────── Helpers ─────────
@@ -193,6 +201,7 @@ namespace EduLog.Controllers
                                           SubjectId = s.Id,
                                           SubjectName = s.Name,
                                           Value = g.Value,
+                                          VerbalValue = g.VerbalValue,
                                           Date = g.Date
                                       }).Take(5).ToListAsync();
 
@@ -368,6 +377,22 @@ namespace EduLog.Controllers
                 };
             }).ToList();
 
+            // Множина LessonMaterial.Id, для яких є питання банку (адаптивний режим увімкнено).
+            // Питання в банку зараз прив'язані до Subject, тому матеріал має адаптив, якщо
+            // для його предмета існує хоч один QuestionItem.
+            var subjectIdsWithQuestions = await _context.QuestionItem
+                .Where(q => materials.Select(m => m.ClassSubjectSubjectId).Contains(q.SubjectId))
+                .Select(q => q.SubjectId)
+                .Distinct()
+                .ToListAsync();
+            var adaptiveMaterialIds = materials
+                .Where(m => m.Type == MaterialType.Homework
+                            && subjectIdsWithQuestions.Contains(m.ClassSubjectSubjectId))
+                .Select(m => m.Id)
+                .ToHashSet();
+
+            ViewData["AdaptiveMaterialIds"] = adaptiveMaterialIds;
+
             var vm = new StudentMaterialsViewModel
             {
                 Summary = summary,
@@ -481,9 +506,9 @@ namespace EduLog.Controllers
             var since = DateTime.UtcNow.Date.AddDays(-30);
             var grades = await (from g in _context.Grade
                                 join s in _context.Subject on g.SubjectId equals s.Id
-                                where g.StudentId == student.Id && g.Date >= since
+                                where g.StudentId == student.Id && g.Date >= since && g.Value != null
                                 orderby g.Date
-                                select new { SubjectName = s.Name, g.Value, Date = g.Date.Date })
+                                select new { SubjectName = s.Name, Value = g.Value!.Value, Date = g.Date.Date })
                                 .ToListAsync();
 
             var dateLabels = Enumerable.Range(0, 31)
@@ -671,9 +696,9 @@ namespace EduLog.Controllers
             // Per-subject grade summary
             var grades = await (from g in _context.Grade
                                 join s in _context.Subject on g.SubjectId equals s.Id
-                                where g.StudentId == student.Id
+                                where g.StudentId == student.Id && g.Value != null
                                 orderby g.Date descending, g.Id descending
-                                select new { SubjectId = s.Id, SubjectName = s.Name, g.Value, g.Date })
+                                select new { SubjectId = s.Id, SubjectName = s.Name, Value = g.Value!.Value, g.Date })
                                 .ToListAsync();
 
             var subjectRows = grades
@@ -731,6 +756,192 @@ namespace EduLog.Controllers
                 SubjectGrades = subjectRows
             };
             return View(vm);
+        }
+
+        // ───────── Adaptive homework (IRT 3PL + BKT) ─────────
+
+        // Створює (або повертає існуючу) сесію адаптивного ДЗ для конкретного матеріалу.
+        // Підбирає перше питання за поточним станом знань учня по темі.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> StartAdaptiveSession(int lessonMaterialId)
+        {
+            var student = await GetCurrentStudentAsync();
+            if (student == null) return Unauthorized();
+
+            var material = await _context.LessonMaterial
+                .FirstOrDefaultAsync(m => m.Id == lessonMaterialId && m.Type == MaterialType.Homework);
+            if (material == null) return NotFound();
+
+            // Якщо є незавершена сесія — повертаємо її.
+            var session = await _context.AdaptiveSession
+                .Include(s => s.CurrentQuestion)
+                .FirstOrDefaultAsync(s => s.StudentId == student.Id
+                                        && s.LessonMaterialId == lessonMaterialId
+                                        && s.CompletedAt == null);
+
+            if (session == null)
+            {
+                session = new AdaptiveSession
+                {
+                    StudentId = student.Id,
+                    LessonMaterialId = lessonMaterialId
+                };
+                _context.AdaptiveSession.Add(session);
+                await _context.SaveChangesAsync();
+            }
+
+            var subjectId = material.ClassSubjectSubjectId;
+            var firstQuestion = session.CurrentQuestion
+                ?? await PickQuestionForSessionAsync(session, student.Id, subjectId);
+
+            if (firstQuestion != null && session.CurrentQuestionId != firstQuestion.Id)
+            {
+                session.CurrentQuestionId = firstQuestion.Id;
+                await _context.SaveChangesAsync();
+            }
+
+            // Початковий pL для теми першого питання (для прогрес-бара).
+            double pLearned = firstQuestion == null
+                ? 0.0
+                : await GetOrInitKnowledgeAsync(student, subjectId, firstQuestion.TopicTag);
+
+            return Json(new
+            {
+                sessionId = session.Id,
+                nextQuestion = firstQuestion == null ? null : new { id = firstQuestion.Id, text = firstQuestion.Text },
+                hint = (firstQuestion != null && pLearned < AdaptiveHintThreshold) ? firstQuestion.HintText : null,
+                pLearned,
+                isComplete = firstQuestion == null
+            });
+        }
+
+        // POST /Student/SubmitAdaptiveAnswer
+        // Приймає (sessionId, questionId, isCorrect), оновлює BKT-стан, підбирає наступне питання.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> SubmitAdaptiveAnswer(int sessionId, int questionId, bool isCorrect)
+        {
+            var student = await GetCurrentStudentAsync();
+            if (student == null) return Unauthorized();
+
+            var session = await _context.AdaptiveSession
+                .Include(s => s.LessonMaterial)
+                .FirstOrDefaultAsync(s => s.Id == sessionId && s.StudentId == student.Id);
+            if (session == null) return NotFound();
+            if (session.CompletedAt != null) return BadRequest("Сесію вже завершено.");
+
+            var question = await _context.QuestionItem.FirstOrDefaultAsync(q => q.Id == questionId);
+            if (question == null) return NotFound();
+
+            // 1) Фіксуємо відповідь.
+            _context.AdaptiveAnswer.Add(new AdaptiveAnswer
+            {
+                SessionId = session.Id,
+                QuestionId = question.Id,
+                IsCorrect = isCorrect
+            });
+
+            // 2) Оновлюємо BKT-стан по темі цього питання.
+            var state = await _context.StudentKnowledgeState
+                .FirstOrDefaultAsync(s => s.StudentId == student.Id
+                                        && s.SubjectId == question.SubjectId
+                                        && s.TopicTag == question.TopicTag);
+            if (state == null)
+            {
+                state = new StudentKnowledgeState
+                {
+                    StudentId = student.Id,
+                    SubjectId = question.SubjectId,
+                    TopicTag = question.TopicTag,
+                    ProbabilityLearned = 0.2
+                };
+                _context.StudentKnowledgeState.Add(state);
+            }
+
+            double newPl = _irtBkt.UpdateBkt(
+                state.ProbabilityLearned,
+                _irtBkt.DefaultPT, _irtBkt.DefaultPS, _irtBkt.DefaultPG,
+                isCorrect);
+            state.ProbabilityLearned = newPl;
+            state.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            // 3) Перевіряємо стоп-критерії.
+            int answersCount = await _context.AdaptiveAnswer.CountAsync(a => a.SessionId == session.Id);
+            bool stopByMastery = newPl > AdaptiveMasteryThreshold;
+            bool stopByLimit = answersCount >= AdaptiveMaxQuestions;
+
+            if (stopByMastery || stopByLimit)
+            {
+                session.CompletedAt = DateTime.UtcNow;
+                session.CurrentQuestionId = null;
+                await _context.SaveChangesAsync();
+
+                return Json(new
+                {
+                    nextQuestion = (object?)null,
+                    hint = (string?)null,
+                    pLearned = newPl,
+                    isComplete = true
+                });
+            }
+
+            // 4) Підбираємо наступне питання.
+            var subjectId = session.LessonMaterial?.ClassSubjectSubjectId ?? question.SubjectId;
+            var next = await PickQuestionForSessionAsync(session, student.Id, subjectId);
+
+            session.CurrentQuestionId = next?.Id;
+            await _context.SaveChangesAsync();
+
+            // pL для теми наступного питання (для відображення прогресу/підказки).
+            double pLearnedForNext = next == null
+                ? newPl
+                : await GetOrInitKnowledgeAsync(student, subjectId, next.TopicTag);
+
+            return Json(new
+            {
+                nextQuestion = next == null ? null : new { id = next.Id, text = next.Text },
+                hint = (next != null && pLearnedForNext < AdaptiveHintThreshold) ? next.HintText : null,
+                pLearned = pLearnedForNext,
+                isComplete = next == null
+            });
+        }
+
+        // Список питань предмета, які учень ще не давав у поточній сесії, та їх вибір через IRT/BKT.
+        private async Task<QuestionItem?> PickQuestionForSessionAsync(AdaptiveSession session, int studentId, int subjectId)
+        {
+            var answeredIds = await _context.AdaptiveAnswer
+                .Where(a => a.SessionId == session.Id)
+                .Select(a => a.QuestionId)
+                .ToListAsync();
+
+            var available = await _context.QuestionItem
+                .Where(q => q.SubjectId == subjectId && !answeredIds.Contains(q.Id))
+                .ToListAsync();
+            if (available.Count == 0) return null;
+
+            // Якщо банк містить кілька тем — балансуємо: беремо середнє pL по темах,
+            // що зустрічаються в доступних питаннях. Це грубо, але достатньо для першого ітерації.
+            var topics = available.Select(q => q.TopicTag).Distinct().ToList();
+            var states = await _context.StudentKnowledgeState
+                .Where(s => s.StudentId == studentId && s.SubjectId == subjectId && topics.Contains(s.TopicTag))
+                .ToDictionaryAsync(s => s.TopicTag, s => s.ProbabilityLearned);
+
+            double avgPl = topics.Count == 0 ? 0.2
+                : topics.Average(t => states.TryGetValue(t, out var v) ? v : 0.2);
+
+            return _irtBkt.SelectNextQuestion(avgPl, available);
+        }
+
+        private async Task<double> GetOrInitKnowledgeAsync(Student student, int subjectId, string topicTag)
+        {
+            var s = await _context.StudentKnowledgeState
+                .FirstOrDefaultAsync(x => x.StudentId == student.Id
+                                       && x.SubjectId == subjectId
+                                       && x.TopicTag == topicTag);
+            return s?.ProbabilityLearned ?? 0.2;
         }
 
         // ───────── Coins ─────────

@@ -1,0 +1,172 @@
+@model List<EduLog.Models.QuestionItem>
+@using EduLog.Models
+
+@{
+    ViewData["Title"] = "Банк питань (адаптивне ДЗ)";
+    var subjects = ViewData["Subjects"] as List<Subject> ?? new List<Subject>();
+    var selectedSubjectId = ViewData["SelectedSubjectId"] as int?;
+    var success = TempData["Success"] as string;
+    var error = TempData["Error"] as string;
+
+    string Difficulty(double b) => b switch
+    {
+        < -1.0 => "легке",
+        > 1.0  => "складне",
+        _      => "середнє"
+    };
+}
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <h3 class="mb-0">
+        <i class="bi bi-question-circle"></i> Банк питань
+    </h3>
+    <span class="text-muted ms-2">Адаптивне ДЗ — IRT 3PL + BKT</span>
+</div>
+
+@if (!string.IsNullOrEmpty(success))
+{
+    <div class="alert alert-success">@success</div>
+}
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row g-3">
+    <div class="col-lg-3">
+        <div class="card">
+            <div class="card-header">📚 Мої предмети</div>
+            <ul class="list-group list-group-flush">
+                @foreach (var s in subjects)
+                {
+                    <li class="list-group-item @(s.Id == selectedSubjectId ? "active" : "")">
+                        <a asp-action="QuestionBank" asp-route-subjectId="@s.Id"
+                           class="@(s.Id == selectedSubjectId ? "text-white" : "")"
+                           style="text-decoration: none;">
+                            @s.Name
+                        </a>
+                    </li>
+                }
+                @if (subjects.Count == 0)
+                {
+                    <li class="list-group-item text-muted">Немає предметів.</li>
+                }
+            </ul>
+        </div>
+    </div>
+
+    <div class="col-lg-9">
+        @if (selectedSubjectId.HasValue)
+        {
+            <div class="card mb-3">
+                <div class="card-header">➕ Додати питання</div>
+                <div class="card-body">
+                    <form asp-action="CreateQuestion" method="post" class="row g-2">
+                        <input type="hidden" name="subjectId" value="@selectedSubjectId" />
+
+                        <div class="col-md-12">
+                            <label class="form-label small">Текст питання</label>
+                            <textarea name="text" class="form-control" rows="2" required
+                                      placeholder="Наприклад: Розв'яжіть рівняння 2x + 3 = 11"></textarea>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small">Тема (TopicTag)</label>
+                            <input name="topicTag" class="form-control" required
+                                   placeholder="Лінійні рівняння" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small">a — дискримінація</label>
+                            <input name="irtA" type="number" step="0.1" min="0.1" max="3.0"
+                                   value="1.0" class="form-control" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small">b — складність</label>
+                            <input name="irtB" type="number" step="0.1" min="-3" max="3"
+                                   value="0.0" class="form-control" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small">c — вгадування</label>
+                            <input name="irtC" type="number" step="0.05" min="0" max="0.35"
+                                   value="0.20" class="form-control" />
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="bi bi-plus-circle"></i> Додати
+                            </button>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small">Підказка (опціонально, для учнів з низьким pL)</label>
+                            <input name="hintText" class="form-control"
+                                   placeholder="Згадай: щоб ізолювати x, спочатку перенеси константу..." />
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>📋 Питання банку (@Model.Count)</span>
+                </div>
+                @if (Model.Count == 0)
+                {
+                    <div class="card-body text-muted">Питань поки що немає. Додайте перше вище.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 40%;">Текст</th>
+                                    <th>Тема</th>
+                                    <th title="Дискримінація">a</th>
+                                    <th title="Складність">b</th>
+                                    <th title="Вгадування">c</th>
+                                    <th>Рівень</th>
+                                    <th>Підказка</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var q in Model)
+                                {
+                                    <tr>
+                                        <td>@q.Text</td>
+                                        <td><span class="badge bg-secondary">@q.TopicTag</span></td>
+                                        <td>@q.IrtA.ToString("0.0")</td>
+                                        <td>@q.IrtB.ToString("+0.0;-0.0;0.0")</td>
+                                        <td>@q.IrtC.ToString("0.00")</td>
+                                        <td><small class="text-muted">@Difficulty(q.IrtB)</small></td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(q.HintText))
+                                            {
+                                                <i class="bi bi-lightbulb text-warning" title="@q.HintText"></i>
+                                            }
+                                        </td>
+                                        <td class="text-end">
+                                            <form asp-action="DeleteQuestion" method="post" class="d-inline"
+                                                  onsubmit="return confirm('Видалити питання?');">
+                                                <input type="hidden" name="id" value="@q.Id" />
+                                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> Оберіть предмет ліворуч, щоб керувати банком питань.
+            </div>
+        }
+    </div>
+</div>

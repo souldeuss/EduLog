@@ -35,6 +35,9 @@ namespace EduLog.Models
         public string? AttachmentPath { get; set; }
         public string? AttachmentFileName { get; set; }
 
+        // EduCoin reward for confirmed homework submission (0..50). Default 3 matches legacy behavior.
+        public int EduCoinReward { get; set; } = 3;
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public ClassSubject? ClassSubject { get; set; }

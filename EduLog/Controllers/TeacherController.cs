@@ -91,7 +91,7 @@ namespace EduLog.Controllers
         public async Task<IActionResult> CreateMaterial(
             int classId, int subjectId, MaterialType type,
             string title, string? description, DateTime? date, DateTime? deadline,
-            IFormFile? attachment, CancellationToken cancellationToken)
+            IFormFile? attachment, int eduCoinReward, CancellationToken cancellationToken)
         {
             var teacher = await GetCurrentTeacherAsync();
             if (teacher == null)
@@ -124,6 +124,13 @@ namespace EduLog.Controllers
                 }
             }
 
+            // Validate EduCoin reward (0..50). Only meaningful for Homework but stored uniformly.
+            if (eduCoinReward < 0 || eduCoinReward > 50)
+            {
+                TempData["Error"] = "Нагорода EduCoin має бути від 0 до 50.";
+                return RedirectToAction(nameof(Materials), new { classId, subjectId });
+            }
+
             _context.LessonMaterial.Add(new LessonMaterial
             {
                 ClassSubjectClassId = classId,
@@ -136,6 +143,7 @@ namespace EduLog.Controllers
                 Deadline = deadline,
                 AttachmentPath = stored?.RelativePath,
                 AttachmentFileName = stored?.OriginalFileName,
+                EduCoinReward = type == MaterialType.Homework ? eduCoinReward : 0,
                 CreatedAt = DateTime.UtcNow
             });
             await _context.SaveChangesAsync();
@@ -220,6 +228,117 @@ namespace EduLog.Controllers
             await _context.SaveChangesAsync();
 
             return RedirectToAction(nameof(Homework), new { id = submission.LessonMaterialId });
+        }
+
+        // ───────── Question bank (adaptive IRT 3PL) ─────────
+
+        // Відображає банк питань для конкретного предмета поточного вчителя.
+        // subjectId опціональний — якщо не задано, показуємо перший предмет.
+        [HttpGet]
+        public async Task<IActionResult> QuestionBank(int? subjectId)
+        {
+            var teacher = await GetCurrentTeacherAsync();
+            if (teacher == null) return RedirectToAction("Index", "Home");
+
+            // Усі предмети, які закріплені за вчителем (через Subject.TeacherId або SubjectTeacher).
+            var subjects = await _context.Subject
+                .Where(s => s.TeacherId == teacher.Id
+                         || s.SubjectTeachers.Any(st => st.TeacherId == teacher.Id))
+                .OrderBy(s => s.Name)
+                .ToListAsync();
+
+            var selectedSubjectId = subjectId ?? subjects.FirstOrDefault()?.Id;
+            var questions = selectedSubjectId == null
+                ? new List<QuestionItem>()
+                : await _context.QuestionItem
+                    .Where(q => q.SubjectId == selectedSubjectId.Value)
+                    .OrderBy(q => q.TopicTag).ThenBy(q => q.IrtB)
+                    .ToListAsync();
+
+            ViewData["Subjects"] = subjects;
+            ViewData["SelectedSubjectId"] = selectedSubjectId;
+            return View(questions);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> CreateQuestion(
+            int subjectId, string text, string topicTag,
+            double irtA, double irtB, double irtC, string? hintText)
+        {
+            var teacher = await GetCurrentTeacherAsync();
+            if (teacher == null) return Forbid();
+
+            // Перевірка прав — предмет має бути в списку вчителя.
+            var subject = await _context.Subject
+                .FirstOrDefaultAsync(s => s.Id == subjectId
+                                       && (s.TeacherId == teacher.Id
+                                           || s.SubjectTeachers.Any(st => st.TeacherId == teacher.Id)));
+            if (subject == null)
+            {
+                TempData["Error"] = "Доступ до предмета заборонено.";
+                return RedirectToAction(nameof(QuestionBank));
+            }
+
+            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(topicTag))
+            {
+                TempData["Error"] = "Текст питання та тема обов'язкові.";
+                return RedirectToAction(nameof(QuestionBank), new { subjectId });
+            }
+
+            // Клемпи на діапазони, обумовлені моделлю IRT 3PL.
+            irtA = Math.Clamp(irtA, 0.1, 3.0);
+            irtB = Math.Clamp(irtB, -3.0, 3.0);
+            irtC = Math.Clamp(irtC, 0.0, 0.35);
+
+            _context.QuestionItem.Add(new QuestionItem
+            {
+                SubjectId = subjectId,
+                Text = text.Trim(),
+                TopicTag = topicTag.Trim(),
+                IrtA = irtA,
+                IrtB = irtB,
+                IrtC = irtC,
+                HintText = string.IsNullOrWhiteSpace(hintText) ? null : hintText.Trim()
+            });
+            await _context.SaveChangesAsync();
+
+            TempData["Success"] = "Питання додано до банку.";
+            return RedirectToAction(nameof(QuestionBank), new { subjectId });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteQuestion(int id)
+        {
+            var teacher = await GetCurrentTeacherAsync();
+            if (teacher == null) return Forbid();
+
+            var question = await _context.QuestionItem
+                .Include(q => q.Subject)
+                .FirstOrDefaultAsync(q => q.Id == id);
+            if (question == null) return NotFound();
+
+            // Право видаляти має лише вчитель цього предмета.
+            bool isOwner = question.Subject?.TeacherId == teacher.Id
+                || await _context.SubjectTeacher.AnyAsync(st => st.SubjectId == question.SubjectId && st.TeacherId == teacher.Id);
+            if (!isOwner)
+            {
+                TempData["Error"] = "Немає прав видалити це питання.";
+                return RedirectToAction(nameof(QuestionBank), new { subjectId = question.SubjectId });
+            }
+
+            int subjectId = question.SubjectId;
+
+            // Видаляємо також пов'язані відповіді — інакше FK Restrict не дозволить.
+            var answers = _context.AdaptiveAnswer.Where(a => a.QuestionId == id);
+            _context.AdaptiveAnswer.RemoveRange(answers);
+
+            _context.QuestionItem.Remove(question);
+            await _context.SaveChangesAsync();
+
+            TempData["Success"] = "Питання видалено.";
+            return RedirectToAction(nameof(QuestionBank), new { subjectId });
         }
     }
 }

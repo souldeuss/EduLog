@@ -68,7 +68,15 @@ namespace EduLog.Services
         public async Task<GamificationReward> ProcessHomeworkSubmittedAsync(int studentId, int lessonMaterialId, bool onTime)
         {
             if (!onTime) return new GamificationReward();
-            return await AwardAsync(studentId, 15, 3, "Здача ДЗ вчасно");
+
+            // Teacher-configurable EduCoin reward per material; default 3 if material missing.
+            var material = await _context.LessonMaterial
+                .FirstOrDefaultAsync(m => m.Id == lessonMaterialId);
+            int coins = material?.EduCoinReward ?? 3;
+            if (coins < 0) coins = 0;
+            if (coins > 50) coins = 50;
+
+            return await AwardAsync(studentId, 15, coins, "Здача ДЗ вчасно");
         }
 
         public async Task<GamificationReward> RecalculateStreakAsync(int studentId, DateTime date)
@@ -135,8 +143,8 @@ namespace EduLog.Services
         {
             var since = DateTime.UtcNow.Date.AddDays(-days);
             var grades = await _context.Grade
-                .Where(g => g.StudentId == studentId && g.Date >= since)
-                .Select(g => g.Value)
+                .Where(g => g.StudentId == studentId && g.Date >= since && g.Value != null)
+                .Select(g => g.Value!.Value)
                 .ToListAsync();
 
             if (grades.Count == 0) return 0;

@@ -747,8 +747,9 @@ else
 </div>
 
 <div class="modal fade" id="generateModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
+    @* modal-dialog-centered + scrollable + обмеження висоти, щоб модалка вміщалась на коротких екранах і скролилась всередині. *@
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content" style="max-height: 90vh;">
             <form id="generateForm" asp-action="GenerateAiSchedule" method="post">
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="yearId" value="@(selectedYear?.Id ?? 0)" />
@@ -765,6 +766,45 @@ else
                         Генерація буде виконана для всіх класів вибраного навчального року. Поточний клас на сторінці впливає лише на перегляд.
                     </div>
 
+                    @* Згортувана інструкція — повний опис кожного параметра. *@
+                    <div class="accordion mb-3" id="generateHelpAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#generateHelpCollapse">
+                                    <i class="bi bi-question-circle me-2"></i> Як це працює? (інструкція до параметрів)
+                                </button>
+                            </h2>
+                            <div id="generateHelpCollapse" class="accordion-collapse collapse" data-bs-parent="#generateHelpAccordion">
+                                <div class="accordion-body small">
+                                    <p class="mb-2">
+                                        ШІ-генератор підбирає для кожного класу слоти в сітці <em>день × урок</em> так, щоб
+                                        задовольнити жорсткі обмеження (вчитель не може вести два уроки одночасно, клас — теж тощо)
+                                        і мінімізувати «м'які» штрафи (вікна, нерівномірне навантаження).
+                                    </p>
+                                    <p class="mb-2"><strong>Режим</strong> визначає, що пріоритетніше:</p>
+                                    <ul class="mb-2">
+                                        <li><strong>⚖️ Збалансований</strong> — рівномірно розкладає предмети по днях тижня. <em>Базовий вибір.</em></li>
+                                        <li><strong>⚡ Щільний</strong> — намагається зібрати уроки в неперервний блок без «вікон» між ними. Підходить, коли учні мають їхати додому однією поїздкою.</li>
+                                        <li><strong>🧩 Доповнення</strong> — зберігає вже наявні слоти й заповнює лише ті, що відсутні. Корисно після ручного редагування частини розкладу.</li>
+                                    </ul>
+                                    <p class="mb-2"><strong>Додаткові параметри</strong> (тонке налаштування):</p>
+                                    <ul class="mb-2">
+                                        <li><strong>Макс. уроків за день</strong> — верхня межа кількості пар на день для одного класу. Чим більше — тим більше шансів вмістити навантаження, але день стає довшим.</li>
+                                        <li><strong>К-сть ітерацій ШІ</strong> — скільки разів алгоритм «переглядає» розклад і покращує його. Більше ітерацій — якісніше, але повільніше. 100 — розумний дефолт; 300–500 — якщо є конфлікти.</li>
+                                        <li><strong>Learning rate</strong> — крок «навчання» оптимізатора. Малий (0.01) дає стабільні результати; великий (0.05+) — швидші, але менш стабільні. Зазвичай не чіпають — 0.02 підходить.</li>
+                                        <li><strong>Дозволити повтори предмету в день</strong> — чи може один і той самий предмет з'являтися двічі за один день (актуально для базових: математика/мова).</li>
+                                        <li><strong>Дозволити вікна</strong> — чи допускати «вікна» між уроками. Вимкнено = щільніший розклад, але рідше вдається вмістити всі предмети.</li>
+                                    </ul>
+                                    <p class="mb-0 text-muted">
+                                        <i class="bi bi-info-circle"></i>
+                                        Порада: для першого запуску залиште все за замовчуванням. Якщо результат не влаштовує — збільшіть кількість ітерацій або змініть режим.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <label class="form-label fw-semibold mb-1">Режим генерації</label>
                     <div class="d-flex flex-column gap-2 mb-3">
                         @foreach (var mode in schedulerModes)
                         {
@@ -792,30 +832,37 @@ else
                             </h2>
                             <div id="advancedSettingsCollapse" class="accordion-collapse collapse" data-bs-parent="#generateAdvancedAccordion">
                                 <div class="accordion-body">
-                                    <label class="form-label d-flex justify-content-between">
+                                    <label class="form-label d-flex justify-content-between mb-1">
                                         <span>Макс. уроків за день</span>
                                         <span id="maxLessonsValue">@schedulerOptions.MaxLessonsPerDay</span>
                                     </label>
                                     <input id="maxLessonsRange" class="form-range" type="range" min="3" max="8" name="options.MaxLessonsPerDay" value="@Math.Clamp(schedulerOptions.MaxLessonsPerDay, 3, 8)" />
+                                    <div class="form-text">Верхня межа кількості уроків на день для одного класу. 7 — стандарт для української школи.</div>
 
-                                    <label class="form-label d-flex justify-content-between mt-3">
+                                    <label class="form-label d-flex justify-content-between mt-3 mb-1">
                                         <span>К-сть ітерацій ШІ</span>
                                         <span id="iterationsValue">@schedulerOptions.Iterations</span>
                                     </label>
                                     <input id="iterationsRange" class="form-range" type="range" min="10" max="500" step="10" name="options.Iterations" value="@Math.Clamp(schedulerOptions.Iterations, 10, 500)" />
+                                    <div class="form-text">Скільки разів алгоритм покращує розклад. Більше — якісніше, але повільніше. 100 — баланс швидкості й якості.</div>
 
-                                    <label class="form-label mt-3" for="learningRateInput">Learning rate</label>
+                                    <label class="form-label mt-3 mb-1" for="learningRateInput">Швидкість навчання (learning rate)</label>
                                     <input id="learningRateInput" class="form-control" type="number" min="0.000001" max="0.1" step="0.000001" name="options.LearningRate" value="@schedulerOptions.LearningRate.ToString(System.Globalization.CultureInfo.InvariantCulture)" />
-                                    <div class="form-text">За замовчуванням: 0.02. Поле можна змінювати вручну.</div>
+                                    <div class="form-text">
+                                        Крок оптимізатора. Малі значення (0.01) — стабільно, великі (0.05+) — швидко, але можуть «перестрибувати» оптимум.
+                                        За замовчуванням: 0.02.
+                                    </div>
 
                                     <div class="form-check form-switch mt-3">
                                         <input class="form-check-input" type="checkbox" id="allowDuplicatesSwitch" name="options.AllowDuplicates" value="true" @(schedulerOptions.AllowDuplicates ? "checked" : null) />
                                         <label class="form-check-label" for="allowDuplicatesSwitch">Дозволити повтори предмету в день</label>
+                                        <div class="form-text ms-4">Один і той самий предмет може з'являтися двічі за день (типово для математики чи мови).</div>
                                     </div>
 
                                     <div class="form-check form-switch mt-2">
                                         <input class="form-check-input" type="checkbox" id="allowGapsSwitch" name="options.AllowGaps" value="true" @(schedulerOptions.AllowGaps ? "checked" : null) />
-                                        <label class="form-check-label" for="allowGapsSwitch">Дозволити вікна</label>
+                                        <label class="form-check-label" for="allowGapsSwitch">Дозволити «вікна»</label>
+                                        <div class="form-text ms-4">Допускаються вільні слоти між уроками. Вимкнено — щільніший день, але може не вистачити місця для всіх предметів.</div>
                                     </div>
                                 </div>
                             </div>

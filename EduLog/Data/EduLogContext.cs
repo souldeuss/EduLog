@@ -36,6 +36,14 @@ namespace EduLog.Data
         public DbSet<CoinTransaction> CoinTransaction { get; set; }
         public DbSet<TeacherAbsence> TeacherAbsence { get; set; }
         public DbSet<ScheduleSlotOverride> ScheduleSlotOverride { get; set; }
+        public DbSet<CustomGradeColumn> CustomGradeColumn { get; set; }
+        public DbSet<GradeScale> GradeScale { get; set; }
+
+        // Adaptive homework (IRT 3PL + BKT)
+        public DbSet<QuestionItem> QuestionItem { get; set; }
+        public DbSet<StudentKnowledgeState> StudentKnowledgeState { get; set; }
+        public DbSet<AdaptiveSession> AdaptiveSession { get; set; }
+        public DbSet<AdaptiveAnswer> AdaptiveAnswer { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -187,6 +195,79 @@ namespace EduLog.Data
                 .HasIndex(o => new { o.ScheduleSlotId, o.Date })
                 .IsUnique();
 
+            // CustomGradeColumn relationships
+            modelBuilder.Entity<CustomGradeColumn>()
+                .HasIndex(c => new { c.ClassId, c.SubjectId });
+
+            // GradeScale: one per (Class, Subject)
+            modelBuilder.Entity<GradeScale>()
+                .HasIndex(g => new { g.ClassId, g.SubjectId })
+                .IsUnique();
+
+            modelBuilder.Entity<Grade>()
+                .HasOne<CustomGradeColumn>()
+                .WithMany()
+                .HasForeignKey(g => g.CustomGradeColumnId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // === Adaptive homework relationships ===
+
+            modelBuilder.Entity<QuestionItem>()
+                .HasOne(q => q.Subject)
+                .WithMany()
+                .HasForeignKey(q => q.SubjectId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<QuestionItem>()
+                .HasIndex(q => new { q.SubjectId, q.TopicTag });
+
+            modelBuilder.Entity<StudentKnowledgeState>()
+                .HasOne(s => s.Student)
+                .WithMany()
+                .HasForeignKey(s => s.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<StudentKnowledgeState>()
+                .HasOne(s => s.Subject)
+                .WithMany()
+                .HasForeignKey(s => s.SubjectId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Один запис стану на трійку (Student, Subject, TopicTag).
+            modelBuilder.Entity<StudentKnowledgeState>()
+                .HasIndex(s => new { s.StudentId, s.SubjectId, s.TopicTag })
+                .IsUnique();
+
+            modelBuilder.Entity<AdaptiveSession>()
+                .HasOne(s => s.Student)
+                .WithMany()
+                .HasForeignKey(s => s.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<AdaptiveSession>()
+                .HasOne(s => s.LessonMaterial)
+                .WithMany()
+                .HasForeignKey(s => s.LessonMaterialId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<AdaptiveSession>()
+                .HasOne(s => s.CurrentQuestion)
+                .WithMany()
+                .HasForeignKey(s => s.CurrentQuestionId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<AdaptiveAnswer>()
+                .HasOne(a => a.Session)
+                .WithMany(s => s.Answers)
+                .HasForeignKey(a => a.SessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<AdaptiveAnswer>()
+                .HasOne(a => a.Question)
+                .WithMany()
+                .HasForeignKey(a => a.QuestionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             // Global query filters
             modelBuilder.Entity<Teacher>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
@@ -225,6 +306,20 @@ namespace EduLog.Data
             modelBuilder.Entity<TeacherAbsence>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
             modelBuilder.Entity<ScheduleSlotOverride>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<CustomGradeColumn>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<GradeScale>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+
+            // Adaptive homework — фільтруємо за школою, як і решта tenant-entities.
+            modelBuilder.Entity<QuestionItem>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<StudentKnowledgeState>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<AdaptiveSession>().HasQueryFilter(e =>
+                _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
+            modelBuilder.Entity<AdaptiveAnswer>().HasQueryFilter(e =>
                 _tenantService == null || _tenantService.SchoolId == null || e.SchoolId == _tenantService.SchoolId);
         }
 
