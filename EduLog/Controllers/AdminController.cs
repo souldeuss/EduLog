@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace EduLog.Controllers
@@ -24,6 +25,23 @@ namespace EduLog.Controllers
         private readonly ILogger<AdminController> _logger;
         private readonly SchedulerApiOptions _schedulerApiOptions;
         private readonly IServiceScopeFactory _serviceScopeFactory;
+
+        private sealed class ScheduleExportBundle
+        {
+            public int SchoolId { get; set; }
+            public DateTime GeneratedAt { get; set; }
+            public List<ScheduleExportYear> Years { get; set; } = new();
+            public List<ScheduleSlotDto> Slots { get; set; } = new();
+        }
+
+        private sealed class ScheduleExportYear
+        {
+            public int Id { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public DateTime StartDate { get; set; }
+            public DateTime EndDate { get; set; }
+            public bool IsArchived { get; set; }
+        }
 
         public AdminController(
             EduLogContext context,
@@ -1461,6 +1479,142 @@ namespace EduLog.Controllers
 
              return await GenerateAndPersistScheduleAsync(yearId, classId, mode, options, mergeExisting: false, cancellationToken);
          }
+
+        [HttpGet]
+        public async Task<IActionResult> ExportAllSchedules(CancellationToken cancellationToken = default)
+        {
+            var schoolId = _tenantService.SchoolId;
+            if (schoolId == null)
+            {
+                return BadRequest("School is not selected.");
+            }
+
+            var years = await _context.AcademicYear
+                .Where(y => y.SchoolId == schoolId.Value)
+                .OrderBy(y => y.StartDate)
+                .ToListAsync(cancellationToken);
+
+            var yearIds = years.Select(y => y.Id).ToList();
+            var slots = await _context.ScheduleSlot
+                .Where(s => s.SchoolId == schoolId.Value && yearIds.Contains(s.AcademicYearId))
+                .Select(s => new ScheduleSlotDto
+                {
+                    SchoolId = s.SchoolId,
+                    AcademicYearId = s.AcademicYearId,
+                    ClassId = s.ClassId,
+                    SubjectId = s.SubjectId,
+                    TeacherId = s.TeacherId,
+                    DayOfWeek = s.DayOfWeek,
+                    LessonNumber = s.LessonNumber,
+                    Room = s.Room
+                })
+                .ToListAsync(cancellationToken);
+
+            var payload = new ScheduleExportBundle
+            {
+                SchoolId = schoolId.Value,
+                GeneratedAt = DateTime.UtcNow,
+                Years = years.Select(y => new ScheduleExportYear
+                {
+                    Id = y.Id,
+                    Name = y.Name,
+                    StartDate = y.StartDate,
+                    EndDate = y.EndDate,
+                    IsArchived = y.IsArchived
+                }).ToList(),
+                Slots = slots
+            };
+
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+            {
+                WriteIndented = true
+            };
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, options);
+            var fileName = $"schedules_all_{DateTime.UtcNow:yyyyMMdd_HHmm}.json";
+            return File(bytes, "application/json", fileName);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ImportAllSchedules(IFormFile file, CancellationToken cancellationToken)
+        {
+            if (file == null || file.Length == 0)
+            {
+                TempData["Error"] = "Оберіть файл для імпорту.";
+                return RedirectToAction(nameof(Schedule));
+            }
+
+            var schoolId = _tenantService.SchoolId;
+            if (schoolId == null)
+            {
+                return BadRequest("School is not selected.");
+            }
+
+            ScheduleExportBundle? payload;
+            await using (var stream = file.OpenReadStream())
+            {
+                payload = await JsonSerializer.DeserializeAsync<ScheduleExportBundle>(stream, cancellationToken: cancellationToken);
+            }
+
+            if (payload == null)
+            {
+                TempData["Error"] = "Невірний файл імпорту.";
+                return RedirectToAction(nameof(Schedule));
+            }
+
+            var newYearIds = new Dictionary<int, int>();
+            var totalImportedSlots = 0;
+            foreach (var year in payload.Years.OrderBy(y => y.StartDate))
+            {
+                var existingYear = await _context.AcademicYear
+                    .FirstOrDefaultAsync(y => y.SchoolId == schoolId.Value && y.Name == year.Name, cancellationToken);
+
+                if (existingYear == null)
+                {
+                    existingYear = new AcademicYear
+                    {
+                        SchoolId = schoolId.Value,
+                        Name = year.Name,
+                        StartDate = year.StartDate,
+                        EndDate = year.EndDate,
+                        IsArchived = year.IsArchived,
+                        IsCurrent = false
+                    };
+                    _context.AcademicYear.Add(existingYear);
+                    await _context.SaveChangesAsync(cancellationToken);
+                }
+                else
+                {
+                    existingYear.StartDate = year.StartDate;
+                    existingYear.EndDate = year.EndDate;
+                    existingYear.IsArchived = year.IsArchived;
+                    await _context.SaveChangesAsync(cancellationToken);
+                }
+
+                newYearIds[year.Id] = existingYear.Id;
+
+                var yearSlots = payload.Slots
+                    .Where(s => s.AcademicYearId == year.Id)
+                    .Select(s => new ScheduleSlot
+                    {
+                        SchoolId = schoolId.Value,
+                        AcademicYearId = existingYear.Id,
+                        ClassId = s.ClassId,
+                        SubjectId = s.SubjectId,
+                        TeacherId = s.TeacherId,
+                        DayOfWeek = s.DayOfWeek,
+                        LessonNumber = s.LessonNumber,
+                        Room = s.Room
+                    })
+                    .ToList();
+
+                await ReplaceScheduleSlotsAsync(existingYear.Id, yearSlots, cancellationToken, mergeExisting: false);
+                totalImportedSlots += yearSlots.Count;
+            }
+
+            TempData["Success"] = $"Імпортовано {totalImportedSlots} слотів для {newYearIds.Count} років.";
+            return RedirectToAction(nameof(Schedule));
+        }
 
          [HttpPost]
          [ValidateAntiForgeryToken]

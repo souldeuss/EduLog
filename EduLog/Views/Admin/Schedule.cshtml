@@ -426,11 +426,17 @@
                 <li><a class="dropdown-item" href="@Url.Action("ExportSchedule", "Admin", new { yearId = selectedYear.Id, format = "json" })">JSON</a></li>
                 <li><a class="dropdown-item" href="@Url.Action("ExportSchedule", "Admin", new { yearId = selectedYear.Id, format = "csv" })">CSV</a></li>
             }
+            <li><hr class="dropdown-divider" /></li>
+            <li><a class="dropdown-item" href="@Url.Action("ExportAllSchedules", "Admin")">Весь розклад (JSON)</a></li>
         </ul>
     </div>
 
     <button id="importBtn" class="btn btn-outline-primary" type="button" @(selectedYear == null ? "disabled" : null)>
         <i class="bi bi-upload"></i> Імпорт
+    </button>
+
+    <button id="importAllBtn" class="btn btn-outline-primary" type="button" @(selectedYear == null ? "disabled" : null)>
+        <i class="bi bi-cloud-arrow-up"></i> Імпорт всього розкладу
     </button>
 
     <button id="clearScheduleBtn" class="btn btn-outline-danger" type="button" @(selectedYear == null ? "disabled" : null) data-bs-toggle="modal" data-bs-target="#clearScheduleModal">
@@ -685,6 +691,11 @@ else
     @Html.AntiForgeryToken()
     <input type="hidden" name="yearId" value="@(selectedYear?.Id ?? 0)" />
     <input id="importFileInput" type="file" name="file" accept=".json,.csv" />
+</form>
+
+<form id="importAllForm" asp-action="ImportAllSchedules" method="post" enctype="multipart/form-data" class="d-none">
+    @Html.AntiForgeryToken()
+    <input id="importAllFileInput" type="file" name="file" accept=".json" />
 </form>
 
 <div class="offcanvas offcanvas-end" tabindex="-1" id="scheduleSidePanel">
@@ -983,6 +994,9 @@ else
         const importBtn = document.getElementById('importBtn');
         const importFileInput = document.getElementById('importFileInput');
         const importForm = document.getElementById('importForm');
+        const importAllBtn = document.getElementById('importAllBtn');
+        const importAllFileInput = document.getElementById('importAllFileInput');
+        const importAllForm = document.getElementById('importAllForm');
         const generateForm = document.getElementById('generateForm');
         const generateSubmitBtn = document.getElementById('generateSubmitBtn');
         const generateProgressWrap = document.getElementById('generateProgressWrap');
@@ -1976,6 +1990,15 @@ else
                 importFileInput.addEventListener('change', () => {
                     if (importFileInput.files?.length) {
                         importForm.submit();
+                    }
+                });
+            }
+
+            if (importAllBtn && importAllFileInput && importAllForm) {
+                importAllBtn.addEventListener('click', () => importAllFileInput.click());
+                importAllFileInput.addEventListener('change', () => {
+                    if (importAllFileInput.files?.length) {
+                        importAllForm.submit();
                     }
                 });
             }
